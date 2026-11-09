@@ -1,0 +1,39 @@
+[package]
+name = "sks_installer"
+version = "2.0.0"
+edition = "2021"
+description = "硕科斯系统安装工具"
+
+[dependencies]
+log = "0.4"
+chrono = "0.4"
+# fltk-bundled：直接链接预编译静态库，无需 CMake 与 FLTK 源码编译。
+# 默认特性（不带 fltk-bundled）会从源码用 CMake 编译 FLTK，产物体积大一倍
+# 且依赖 CMake/MSBuild 环境。
+fltk = { version = "1.4", features = ["fltk-bundled"] }
+# 直接引用 fltk-sys 以使用 `Fl::delete_widget`（延迟删除）——
+# fltk-rs 公开的 `WidgetBase::delete` 是立即 C++ delete，在回调栈内使用是 UAF
+fltk-sys = "1.5"
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Globalization",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Console",
+    "Win32_System_IO",
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[dev-dependencies]
+serde_json = "1"
+
+[build-dependencies]
+winresource = "0.1"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true

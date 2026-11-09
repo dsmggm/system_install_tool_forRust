@@ -1,0 +1,289 @@
+<?xml version="1.0" encoding="utf-8"?>
+<unattend xmlns="urn:schemas-microsoft-com:unattend" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+	<!--https://schneegans.de/windows/unattend-generator/?LanguageMode=Unattended&UILanguage=zh-CN&Locale=zh-Hans-CN&Keyboard=0804%3A%7B81d4e9c9-1d3b-41bc-9e6c-4b40bf79e35e%7D%7Bfa550b04-5ad7-411f-a5ac-ca038ec515d7%7D&GeoLocation=45&PEMode=Default&WindowsEditionMode=Interactive&ProcessorArchitecture=amd64&BypassRequirementsCheck=true&BypassNetworkCheck=true&HidePowerShellWindows=true&ComputerNameMode=Random&TimeZoneMode=Implicit&UserAccountMode=Unattended&AccountName0=Admin&AccountDisplayName0=&AccountPassword0=&AccountGroup0=Administrators&AutoLogonMode=Own&PasswordExpirationMode=Unlimited&LockoutMode=Default&HideFiles=Hidden&TaskbarSearch=Box&TaskbarIconsMode=Default&StartTilesMode=Default&StartPinsMode=Default&DisableWindowsUpdate=true&CoreIsolationMode=Enabled&EffectsMode=Default&DesktopIconsMode=Default&StartFoldersMode=Default&WifiMode=Skip&ExpressSettings=DisableAll&LockKeysMode=Skip&StickyKeysMode=Default&ColorMode=Default&WallpaperMode=Default&LockScreenMode=Default&FirstLogonScript0=echo+%E6%9B%B4%E6%94%B9%E7%94%B5%E6%BA%90%E6%96%B9%E6%A1%88%E4%B8%BA%E9%AB%98%E6%80%A7%E8%83%BD%0D%0APowerCFG+%2FSETACTIVE+8c5e7FDA-E8BF-4A96-9a85-A6E23A8C635c%0D%0A%0D%0Aecho+%E5%85%B3%E9%97%AD%E7%9D%A1%E7%9C%A0%0D%0APowerCFG+-change+-standby-timeout-DC+0%0D%0APowerCFG+-change+-standby-timeout-ac+0%0D%0A%0D%0Aecho+%E5%85%B3%E9%97%AD%E7%A1%AC%E7%9B%98%E7%9D%A1%E7%9C%A0%0D%0APowerCFG+-change+-disk-timeout-DC+0%0D%0APowerCFG+-change+-disk-timeout-ac+0%0D%0A%0D%0Aecho+%E4%BF%AE%E6%94%B9%E5%B1%8F%E5%B9%95%E5%85%B3%E9%97%AD%E6%97%B6%E9%97%B4%0D%0APowerCFG+-change+-monitor-timeout-ac+0%0D%0APowerCFG+-change+-monitor-timeout-DC+0%0D%0A%0D%0Aecho+%E7%A6%81%E7%94%A8USB%E9%80%89%E6%8B%A9%E6%80%A7%E6%9A%82%E5%81%9C%E8%AE%BE%E7%BD%AE%EF%BC%88USB%E7%9C%81%E7%94%B5%E5%8A%9F%E8%83%BD%EF%BC%89%0D%0APowerCFG+-setacvalueindex+SCHEME_CURRENT+2A737441-1930-4402-8D77-B2BebBA308A3+48E6B7A6-50F5-4782-A5D4-53bb8F07E226+0%0D%0APowerCFG+-setdcvalueindex+SCHEME_CURRENT+2a737441-1930-4402-8D77-B2Bebba308A3+48E6B7A6-50F5-4782-A5D4-53bb8F07E226+0%0D%0A%0D%0Aecho+%E5%B0%86%E7%94%B5%E6%BA%90%E6%8C%89%E9%92%AE%E6%93%8D%E4%BD%9C%E8%AE%BE%E7%BD%AE%E4%B8%BA%E2%80%9C%E4%B8%8D%E9%87%87%E5%8F%96%E4%BB%BB%E4%BD%95%E6%93%8D%E4%BD%9C%E2%80%9D%0D%0APowerCFG+-setacvalueindex+SCHEME_CURRENT+4f971E89-EEBD-4455-A8DE-9E59040E7347+7648EFA3-dd9C-4E3E-B566-50F929386280+0%0D%0APowerCFG+-setdcvalueindex+SCHEME_CURRENT+4F971E89-EEBD-4455-A8DE-9E59040E7347+7648EFA3-DD9C-4E3E-B566-50F929386280+0%0D%0A%0D%0Aecho+%E5%B0%86%E7%9D%A1%E7%9C%A0%E6%8C%89%E9%92%AE%E6%93%8D%E4%BD%9C%E8%AE%BE%E7%BD%AE%E4%B8%BA%E2%80%9C%E4%B8%8D%E9%87%87%E5%8F%96%E4%BB%BB%E4%BD%95%E6%93%8D%E4%BD%9C%E2%80%9D%0D%0APowerCFG+-setacvalueindex+SCHEME_CURRENT+4F971E89-EEBD-4455-A8DE-9E59040E7347+96996bc0-ad50-47ec-923b-6f41874dd9eb+0%0D%0APowerCFG+-setdcvalueindex+SCHEME_CURRENT+4f971e89-eebd-4455-a8de-9e59040e7347+96996bc0-ad50-47ec-923b-6f41874dd9eb+0%0D%0A%0D%0Aecho+%E5%B0%86%E5%90%88%E4%B8%8A%E7%9B%96%E5%AD%90%E6%93%8D%E4%BD%9C%E8%AE%BE%E7%BD%AE%E4%B8%BA%E2%80%9C%E4%B8%8D%E9%87%87%E5%8F%96%E4%BB%BB%E4%BD%95%E6%93%8D%E4%BD%9C%E2%80%9D%0D%0APowerCFG+-setacvalueindex+SCHEME_CURRENT+4f971E89-EEBD-4455-A8DE-9E59040E7347+5ca83367-6e45-459f-a27b-476b1d01C936+0%0D%0APowerCFG+-setdcvalueindex+SCHEME_CURRENT+4f971e89-eebd-4455-a8de-9e59040e7347+5ca83367-6e45-459f-a27b-476b1d01c936+0%0D%0A%0D%0Aecho+%E6%BF%80%E6%B4%BB%E6%89%80%E6%9C%89%E7%94%B5%E6%BA%90%E8%AE%BE%E7%BD%AE%0D%0Apowercfg+-setactive+SCHEME_CURRENT%0D%0A%0D%0Aecho+%E5%85%B3%E9%97%AD%E5%BF%AB%E9%80%9F%E5%90%AF%E5%8A%A8%0D%0Areg+add+%E2%80%9CHKLM%5CSYSTEM%5CCurrentControlSet%5CControl%5CSession+Manager%5CPower%E2%80%9D+%2Fv+HiberbootEnabled+%2Ft+REG_DWORD+%2Fd+0+%2Ff%0D%0A%0D%0Aecho+%E7%A6%81%E7%94%A8%E4%BC%91%E7%9C%A0%EF%BC%88%E5%BD%BB%E5%BA%95%E5%85%B3%E9%97%AD%E7%9D%A1%E7%9C%A0%EF%BC%89%0D%0A%E7%94%B5%E6%BA%90CFG+-h+%E5%85%B3%E9%97%AD%0D%0A%0D%0Aecho+%E6%98%BE%E7%A4%BA%E6%AD%A4%E7%94%B5%E8%84%91%E7%AD%89%E5%9B%BE%E6%A0%87%0D%0Aecho+%E6%98%BE%E7%A4%BA%E7%94%A8%E6%88%B7%E7%9A%84%E6%96%87%E4%BB%B6%0D%0AREG+ADD+HKCU%5CSoftware%5CMicrosoft%5CWindows%5CCurrentVersion%5CExplorer%5CHideDesktopIcons%5CNewStartPanel+%2Fv+%7B59031a47-3f72-44a7-89c5-5595fe6b30ee%7D+%2Ft+REG_DWORD+%2Fd+0+%2Ff%0D%0Aecho+%E6%98%BE%E7%A4%BA%E8%AE%A1%E7%AE%97%E6%9C%BA%0D%0AREG+ADD+HKCU%5CSoftware%5CMicrosoft%5CWindows%5CCurrentVersion%5CExplorer%5CHideDesktopIcons%5CNewStartPanel+%2Fv+%7B20D04FE0-3AEA-1069-A2D8-08002B30309D%7D+%2Ft+REG_DWORD+%2Fd+0+%2Ff%0D%0Aecho+%E6%98%BE%E7%A4%BA%E7%BD%91%E7%BB%9C%0D%0AREG+ADD+HKCU%5CSoftware%5CMicrosoft%5CWindows%5CCurrentVersion%5CExplorer%5CHideDesktopIcons%5CNewStartPanel+%2Fv+%7BF02C1A0D-BE21-4350-88B0-7367FC96EF3C%7D+%2Ft+REG_DWORD+%2Fd+0+%2Ff%0D%0Aecho+%E6%98%BE%E7%A4%BA%E6%8E%A7%E5%88%B6%E9%9D%A2%E6%9D%BF%0D%0AREG+ADD+HKCU%5CSoftware%5CMicrosoft%5CWindows%5CCurrentVersion%5CExplorer%5CHideDesktopIcons%5CNewStartPanel+%2Fv+%7B5399E694-6CE5-4D6C-8FCE-1D8870FDCBA0%7D+%2Ft+REG_DWORD+%2Fd+0+%2Ff+&FirstLogonScriptType0=Cmd&AppLockerMode=Skip-->
+	<!-- 此应答文件测试过的系统有：Win11Pro、Win11LTSC2024、Win10Pro、Win10LTSC2021、Win10LTSC2019 -->
+	<settings pass="offlineServicing"></settings>
+	<settings pass="windowsPE">
+		<component name="Microsoft-Windows-International-Core-WinPE" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+		</component>
+		<component name="Microsoft-Windows-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+			<UserData>
+				<ProductKey>
+					<Key>00000-00000-00000-00000-00000</Key>
+					<WillShowUI>Always</WillShowUI>
+				</ProductKey>
+				<AcceptEula>true</AcceptEula>
+			</UserData>
+			<UseConfigurationSet>false</UseConfigurationSet>
+			<RunSynchronous>
+				<RunSynchronousCommand wcm:action="add">
+					<Order>1</Order>
+					<Path>reg.exe add "HKLM\SYSTEM\Setup\LabConfig" /v BypassTPMCheck /t REG_DWORD /d 1 /f</Path>
+				</RunSynchronousCommand>
+				<RunSynchronousCommand wcm:action="add">
+					<Order>2</Order>
+					<Path>reg.exe add "HKLM\SYSTEM\Setup\LabConfig" /v BypassSecureBootCheck /t REG_DWORD /d 1 /f</Path>
+				</RunSynchronousCommand>
+				<RunSynchronousCommand wcm:action="add">
+					<Order>3</Order>
+					<Path>reg.exe add "HKLM\SYSTEM\Setup\LabConfig" /v BypassRAMCheck /t REG_DWORD /d 1 /f</Path>
+				</RunSynchronousCommand>
+			</RunSynchronous>
+		</component>
+	</settings>
+	<settings pass="generalize"></settings>
+	<settings pass="specialize">
+		<component name="Microsoft-Windows-Deployment" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+			<RunSynchronous>
+				<RunSynchronousCommand wcm:action="add">
+					<Order>1</Order>
+					<Path>powershell.exe -WindowStyle "Hidden" -NoProfile -Command "$xml = [xml]::new(); $xml.Load('C:\Windows\Panther\unattend.xml'); $sb = [scriptblock]::Create( $xml.unattend.Extensions.ExtractScript ); Invoke-Command -ScriptBlock $sb -ArgumentList $xml;"</Path>
+				</RunSynchronousCommand>
+				<RunSynchronousCommand wcm:action="add">
+					<Order>2</Order>
+					<Path>powershell.exe -WindowStyle "Hidden" -ExecutionPolicy "Unrestricted" -NoProfile -File "C:\Windows\Setup\Scripts\Specialize.ps1"</Path>
+				</RunSynchronousCommand>
+			</RunSynchronous>
+		</component>
+	</settings>
+	<settings pass="auditSystem"></settings>
+	<settings pass="auditUser"></settings>
+	<settings pass="oobeSystem">
+		<component name="Microsoft-Windows-International-Core" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+			<InputLocale>0804:{81d4e9c9-1d3b-41bc-9e6c-4b40bf79e35e}{fa550b04-5ad7-411f-a5ac-ca038ec515d7}</InputLocale>
+		</component>
+		<component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+			<UserAccounts>
+				<LocalAccounts>
+					<LocalAccount wcm:action="add">
+						<Name>%username%</Name>
+						<DisplayName></DisplayName>
+						<Group>Administrators</Group>
+						<Password>
+							<Value></Value>
+							<PlainText>true</PlainText>
+						</Password>
+					</LocalAccount>
+				</LocalAccounts>
+			</UserAccounts>
+			<AutoLogon>
+				<Username>%username%</Username>
+				<Enabled>true</Enabled>
+				<LogonCount>1</LogonCount>
+				<Password>
+					<Value></Value>
+					<PlainText>true</PlainText>
+				</Password>
+			</AutoLogon>
+			<OOBE>
+				<ProtectYourPC>3</ProtectYourPC>
+				<HideEULAPage>true</HideEULAPage>
+				<HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
+				<HideOnlineAccountScreens>false</HideOnlineAccountScreens>
+			</OOBE>
+			<FirstLogonCommands>
+				<SynchronousCommand wcm:action="add">
+					<Order>1</Order>
+					<CommandLine>powershell.exe -WindowStyle "Hidden" -ExecutionPolicy "Unrestricted" -NoProfile -File "C:\Windows\Setup\Scripts\FirstLogon.ps1"</CommandLine>
+				</SynchronousCommand>
+			</FirstLogonCommands>
+		</component>
+	</settings>
+	<Extensions xmlns="https://schneegans.de/windows/unattend-generator/">
+		<Build>
+			<Commit>
+				<Hash>3de37dc6bc9bb1f63aeac7aa137c84c1b30b3b28</Hash>
+				<GitHubUrl>https://github.com/cschneegans/unattend-generator/commit/3de37dc6bc9bb1f63aeac7aa137c84c1b30b3b28</GitHubUrl>
+			</Commit>
+		</Build>
+		<ExtractScript>
+param(
+    [xml] $Document
+);
+
+foreach( $file in $Document.unattend.Extensions.File ) {
+    $path = [System.Environment]::ExpandEnvironmentVariables( $file.GetAttribute( 'path' ) );
+    mkdir -Path( $path | Split-Path -Parent ) -ErrorAction 'SilentlyContinue';
+    $encoding = switch( [System.IO.Path]::GetExtension( $path ) ) {
+        { $_ -eq '.xml' } { [System.Text.UTF8Encoding]::new( $false ); }
+        { $_ -eq '.ps1' } { [System.Text.Encoding]::UTF8; }
+        { $_ -in '.reg', '.vbs', '.js' } { [System.Text.UnicodeEncoding]::new( $false, $true ); }
+        default { [System.Text.Encoding]::Default; }
+    };
+    $text = $file.InnerText.Trim();
+    # .cmd 批处理输出 Windows CRLF 行尾（XML 解析会将文本节点行尾归一化为 LF）
+    if( [System.IO.Path]::GetExtension( $path ) -eq '.cmd' ) {
+        $text = $text -replace '\r?\n', "`r`n";
+    }
+    $bytes = $encoding.GetPreamble() + $encoding.GetBytes( $text );
+    [System.IO.File]::WriteAllBytes( $path, $bytes );
+}
+		</ExtractScript>
+		<File path="C:\Windows\Setup\Scripts\PauseWindowsUpdate.xml">
+&lt;Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task"&gt;
+	&lt;Triggers&gt;
+		&lt;BootTrigger&gt;
+			&lt;Repetition&gt;
+				&lt;Interval&gt;P1D&lt;/Interval&gt;
+				&lt;StopAtDurationEnd&gt;false&lt;/StopAtDurationEnd&gt;
+			&lt;/Repetition&gt;
+			&lt;Enabled&gt;true&lt;/Enabled&gt;
+		&lt;/BootTrigger&gt;
+	&lt;/Triggers&gt;
+	&lt;Principals&gt;
+		&lt;Principal id="Author"&gt;
+			&lt;UserId&gt;S-1-5-19&lt;/UserId&gt;
+			&lt;RunLevel&gt;LeastPrivilege&lt;/RunLevel&gt;
+		&lt;/Principal&gt;
+	&lt;/Principals&gt;
+	&lt;Settings&gt;
+		&lt;MultipleInstancesPolicy&gt;IgnoreNew&lt;/MultipleInstancesPolicy&gt;
+		&lt;DisallowStartIfOnBatteries&gt;false&lt;/DisallowStartIfOnBatteries&gt;
+		&lt;StopIfGoingOnBatteries&gt;false&lt;/StopIfGoingOnBatteries&gt;
+		&lt;AllowHardTerminate&gt;true&lt;/AllowHardTerminate&gt;
+		&lt;StartWhenAvailable&gt;false&lt;/StartWhenAvailable&gt;
+		&lt;RunOnlyIfNetworkAvailable&gt;false&lt;/RunOnlyIfNetworkAvailable&gt;
+		&lt;IdleSettings&gt;
+			&lt;StopOnIdleEnd&gt;true&lt;/StopOnIdleEnd&gt;
+			&lt;RestartOnIdle&gt;false&lt;/RestartOnIdle&gt;
+		&lt;/IdleSettings&gt;
+		&lt;AllowStartOnDemand&gt;true&lt;/AllowStartOnDemand&gt;
+		&lt;Enabled&gt;true&lt;/Enabled&gt;
+		&lt;Hidden&gt;false&lt;/Hidden&gt;
+		&lt;RunOnlyIfIdle&gt;false&lt;/RunOnlyIfIdle&gt;
+		&lt;WakeToRun&gt;false&lt;/WakeToRun&gt;
+		&lt;ExecutionTimeLimit&gt;PT72H&lt;/ExecutionTimeLimit&gt;
+		&lt;Priority&gt;7&lt;/Priority&gt;
+	&lt;/Settings&gt;
+	&lt;Actions Context="Author"&gt;
+		&lt;Exec&gt;
+			&lt;Command&gt;C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe&lt;/Command&gt;
+			&lt;Arguments&gt;-WindowStyle Hidden -NoProfile -NonInteractive -Command "$format = 'yyyy-MM-ddTHH\:mm\:ssK'; $now = [datetime]::UtcNow; $start = $now.ToString($format); $end = $now.AddDays(7).ToString($format); $params = @{ LiteralPath = 'Registry::HKLM\Software\Microsoft\WindowsUpdate\UX\Settings'; Type = 'String'; Force = $true; Verbose = $true; }; 'PauseFeatureUpdatesStartTime', 'PauseQualityUpdatesStartTime', 'PauseUpdatesStartTime' | foreach { Set-ItemProperty @params -Name $_ -Value $start; }; 'PauseFeatureUpdatesEndTime', 'PauseQualityUpdatesEndTime', 'PauseUpdatesExpiryTime' | foreach { Set-ItemProperty @params -Name $_ -Value $end; };"&lt;/Arguments&gt;
+		&lt;/Exec&gt;
+	&lt;/Actions&gt;
+&lt;/Task&gt;
+		</File>
+		<File path="C:\Windows\Setup\Scripts\unattend-01.cmd">
+echo 更改电源方案为高性能;
+powercfg /SETACTIVE 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c
+
+echo 关闭睡眠;
+powercfg -change -standby-timeout-dc 0
+powercfg -change -standby-timeout-ac 0
+
+echo 关闭硬盘睡眠;
+powercfg -change -disk-timeout-dc 0
+powercfg -change -disk-timeout-ac 0
+
+echo 关闭显示器睡眠;
+powercfg -change -monitor-timeout-ac 0
+powercfg -change -monitor-timeout-dc 0
+
+echo 禁用USB选择性暂停设置（USB省电功能）;
+powercfg -setacvalueindex SCHEME_CURRENT 2a737441-1930-4402-8d77-b2bebba308a3 48e6b7a6-50f5-4782-a5d4-53bb8f07e226 0
+powercfg -setdcvalueindex SCHEME_CURRENT 2a737441-1930-4402-8d77-b2bebba308a3 48e6b7a6-50f5-4782-a5d4-53bb8f07e226 0
+
+echo 将电源按钮操作设置为"不采取任何操作
+powercfg -setacvalueindex SCHEME_CURRENT 4f971e89-eebd-4455-a8de-9e59040e7347 7648efa3-dd9c-4e3e-b566-50f929386280 0
+powercfg -setdcvalueindex SCHEME_CURRENT 4f971e89-eebd-4455-a8de-9e59040e7347 7648efa3-dd9c-4e3e-b566-50f929386280 0
+
+echo 将睡眠按钮操作设置为"不采取任何操作;
+powercfg -setacvalueindex SCHEME_CURRENT 4f971e89-eebd-4455-a8de-9e59040e7347 96996bc0-ad50-47ec-923b-6f41874dd9eb 0
+powercfg -setdcvalueindex SCHEME_CURRENT 4f971e89-eebd-4455-a8de-9e59040e7347 96996bc0-ad50-47ec-923b-6f41874dd9eb 0
+
+echo 将合上盖子操作设置为"不采取任何操作;
+powercfg -setacvalueindex SCHEME_CURRENT 4f971e89-eebd-4455-a8de-9e59040e7347 5ca83367-6e45-459f-a27b-476b1d01c936 0
+powercfg -setdcvalueindex SCHEME_CURRENT 4f971e89-eebd-4455-a8de-9e59040e7347 5ca83367-6e45-459f-a27b-476b1d01c936 0
+
+echo 激活所有电源设置;
+powercfg -setactive SCHEME_CURRENT
+
+echo 关闭快速启动;
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Power" /v HiberbootEnabled /t REG_DWORD /d 0 /f
+
+echo 禁用休眠（彻底关闭睡眠）;
+powercfg -h off
+
+echo 显示用户的文件;
+REG ADD HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons\NewStartPanel /v {59031a47-3f72-44a7-89c5-5595fe6b30ee} /t REG_DWORD /d 0 /f
+echo 显示计算机;
+REG ADD HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons\NewStartPanel /v {20D04FE0-3AEA-1069-A2D8-08002B30309D} /t REG_DWORD /d 0 /f
+echo 显示网络;
+REG ADD HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons\NewStartPanel /v {F02C1A0D-BE21-4350-88B0-7367FC96EF3C} /t REG_DWORD /d 0 /f
+echo 显示控制面板;
+REG ADD HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons\NewStartPanel /v {5399E694-6CE5-4D6C-8FCE-1D8870FDCBA0} /t REG_DWORD /d 0 /f
+		</File>
+		<File path="C:\Windows\Setup\Scripts\Specialize.ps1">
+$scripts = @(
+	{
+		reg.exe add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\OOBE" /v BypassNRO /t REG_DWORD /d 1 /f;
+	};
+	{
+		net.exe accounts /maxpwage:UNLIMITED;
+	};
+	{
+		schtasks.exe /Create /F /TN 'PauseWindowsUpdate' /XML 'C:\Windows\Setup\Scripts\PauseWindowsUpdate.xml';
+	};
+%disable_firwall%
+);
+
+&amp; {
+  [float] $complete = 0;
+  [float] $increment = 100 / $scripts.Count;
+  foreach( $script in $scripts ) {
+    Write-Progress -Id 0 -Activity 'Running scripts to customize your Windows installation. Do not close this window.' -PercentComplete $complete;
+    '*** Will now execute command &#xAB;{0}&#xBB;.' -f $(
+      $script.ToString().Trim() -replace '\s+', ' ' -replace '^(.{99})(.+)$', '$1&#x2026;';
+    );
+    $start = [datetime]::Now;
+    &amp; $script;
+    '*** Finished executing command after {0:0} ms.' -f [datetime]::Now.Subtract( $start ).TotalMilliseconds;
+    "`r`n" * 3;
+    $complete += $increment;
+  }
+} *&gt;&amp;1 | Out-String -Width 1KB -Stream &gt;&gt; "C:\Windows\Setup\Scripts\Specialize.log";
+		</File>
+		<File path="C:\Windows\Setup\Scripts\FirstLogon.ps1">
+$scripts = @(
+	{
+		Set-ItemProperty -LiteralPath 'Registry::HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon' -Name 'AutoLogonCount' -Type 'DWord' -Force -Value 0;
+	};
+	{
+		C:\Windows\Setup\Scripts\unattend-01.cmd;
+	};
+	{
+		Remove-Item -LiteralPath @(
+		  'C:\Windows\Panther\unattend.xml';
+		  'C:\Windows\Panther\unattend-original.xml';
+		  'C:\Windows\Setup\Scripts\Wifi.xml';
+		) -Force -ErrorAction 'SilentlyContinue' -Verbose;
+	};
+	{
+		# 密码永不过期
+		Set-LocalUser -Name "%username%" -PasswordNeverExpires $true
+	};
+	{
+		# 移动调试工具到桌面
+		$desk = [Environment]::GetFolderPath('Desktop');
+		Move-Item -Path 'C:\Windows\panther\TestTools' -Destination $desk
+	};
+);
+
+&amp; {
+  [float] $complete = 0;
+  [float] $increment = 100 / $scripts.Count;
+  foreach( $script in $scripts ) {
+    Write-Progress -Id 0 -Activity 'Running scripts to finalize your Windows installation. Do not close this window.' -PercentComplete $complete;
+    '*** Will now execute command &#xAB;{0}&#xBB;.' -f $(
+      $script.ToString().Trim() -replace '\s+', ' ' -replace '^(.{99})(.+)$', '$1&#x2026;';
+    );
+    $start = [datetime]::Now;
+    &amp; $script;
+    '*** Finished executing command after {0:0} ms.' -f [datetime]::Now.Subtract( $start ).TotalMilliseconds;
+    "`r`n" * 3;
+    $complete += $increment;
+  }
+} *&gt;&amp;1 | Out-String -Width 1KB -Stream &gt;&gt; "C:\Windows\Setup\Scripts\FirstLogon.log";
+		</File>
+	</Extensions>
+</unattend>
