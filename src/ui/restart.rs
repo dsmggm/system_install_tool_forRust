@@ -7,7 +7,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use fltk::app;
-use fltk::enums::{Align, FrameType};
+use fltk::enums::{Align, Font, FrameType};
 use fltk::frame::Frame;
 use fltk::group::{Flex, Group};
 use fltk::prelude::*;
@@ -30,25 +30,37 @@ pub fn show(parent: &mut DoubleWindow, countdown_sec: i64) {
     let (dx, dy, dw, dh) = super::dialog_geometry(parent, 380, 200, 340, 180);
     let mut win = DoubleWindow::new(dx, dy, dw, dh, "系统安装完成");
     win.size_range(dw.min(340), dh.min(180), 0, 0);
-    win.set_color(theme::rgb(theme::BG));
+    win.set_color(theme::rgb(theme::BG()));
     win.set_icon(Some(app_icon()));
+    win.draw(|w| theme::draw_bg_gradient(w));
     win.begin();
 
     let mut root = Flex::default().column().size_of_parent();
-    root.set_margin(16);
-    root.set_spacing(10);
-    root.set_color(theme::rgb(theme::BG));
+    root.set_margin(20);
+    root.set_spacing(12);
+    root.set_color(theme::rgb(theme::BG()));
 
-    let mut label = Frame::default();
-    label.set_frame(FrameType::RFlatBox);
-    label.set_color(theme::rgb(theme::CARD));
-    label.set_label_color(theme::rgb(theme::TEXT));
-    label.set_label_size(13);
-    label.set_align(Align::Center | Align::Inside);
-    label.set_label(&format!("系统安装完成！\n将在 {total} 秒后自动重启..."));
+    // 大卡片：成功标题（粗体）+ 倒计时副文案（次要色），随窗口剩余空间拉伸
+    let mut card = Flex::default().column();
+    card.set_frame(FrameType::RFlatBox);
+    card.set_color(theme::rgb(theme::CARD()));
+    card.set_margins(20, 14, 20, 14);
+    card.set_spacing(6);
+    let mut title_lbl = Frame::default().with_label("系统安装完成");
+    title_lbl.set_align(Align::Center | Align::Inside);
+    title_lbl.set_label_font(Font::HelveticaBold);
+    title_lbl.set_label_size(15);
+    title_lbl.set_label_color(theme::rgb(theme::TEXT()));
+    card.fixed(&title_lbl, 24);
+    let mut sub_lbl = Frame::default();
+    sub_lbl.set_align(Align::Center | Align::Inside);
+    sub_lbl.set_label_size(12);
+    sub_lbl.set_label_color(theme::rgb(theme::MUTED()));
+    sub_lbl.set_label(&format!("将在 {total} 秒后自动重启"));
+    card.end();
     // 不固定高度：卡片吸收窗口剩余空间，按钮始终贴底。
     let mut btn_row = Flex::default().row();
-    btn_row.set_color(theme::rgb(theme::BG));
+    btn_row.set_color(theme::rgb(theme::BG()));
     // 两个按钮平分行宽（不设固定宽度），整行在对话框内左右对称。
     let mut restart_btn = theme::primary_button("立刻重启");
     let mut cancel_btn = theme::secondary_button("取消");
@@ -67,7 +79,7 @@ pub fn show(parent: &mut DoubleWindow, countdown_sec: i64) {
 
     // “立刻重启”例程（供定时器与按钮复用）。
     let do_restart: Rc<RefCell<Box<dyn FnMut()>>> = {
-        let mut label = label.clone();
+        let mut sub = sub_lbl.clone();
         let did_restart = did_restart.clone();
         let handle_cell = handle_cell.clone();
         let mut win_c = win.clone();
@@ -79,7 +91,7 @@ pub fn show(parent: &mut DoubleWindow, countdown_sec: i64) {
             if let Some(h) = handle_cell.take() {
                 app::remove_timeout3(h);
             }
-            label.set_label("正在重启...");
+            sub.set_label("正在重启，请稍候...");
             if let Err(e) = std::process::Command::new("shutdown")
                 .args(["/r", "/t", "0"])
                 .creation_flags(crate::utils::CREATE_NO_WINDOW)
@@ -93,7 +105,7 @@ pub fn show(parent: &mut DoubleWindow, countdown_sec: i64) {
 
     // 倒计时 tick
     {
-        let mut label = label.clone();
+        let mut sub = sub_lbl.clone();
         let remaining = remaining.clone();
         let do_restart2 = do_restart.clone();
         let h = app::add_timeout3(1.0, move |handle| {
@@ -103,7 +115,7 @@ pub fn show(parent: &mut DoubleWindow, countdown_sec: i64) {
                 (do_restart2.borrow_mut())();
                 return;
             }
-            label.set_label(&format!("系统安装完成！\n将在 {n} 秒后自动重启..."));
+            sub.set_label(&format!("将在 {n} 秒后自动重启"));
             app::repeat_timeout3(1.0, handle);
         });
         handle_cell.set(Some(h));

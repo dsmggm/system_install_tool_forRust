@@ -1,78 +1,436 @@
 //! 统一视觉主题：配色、字体与常用控件样式。
 //!
-//! 目标是把界面从「FLTK 默认灰色控件堆叠」调整成更现代的卡片式布局：
-//! 浅灰背景 + 白色圆角卡片 + 单一主色（蓝）强调操作按钮。
+//! 支持浅/暗两种主题模式，按 2 阶段手动切换：
+//! - 启动时：根据系统深浅色自动选择初始主题
+//! - 运行时：点击按钮在「明亮」⇔「暗黑」循环切换
 //!
 //! 说明：FLTK 没有样式表，所有外观都靠 `box/color/font/size` 逐控件设置，
 //! 因此这里集中成少量构造函数，避免各处散落的魔法颜色。
+//!
+//! 现代化效果：Tech Blue 渐变、玻璃拟态（alpha blending）、标题栏融合。
 
 #![allow(dead_code)]
+#![allow(non_snake_case)]
+
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use fltk::app;
 use fltk::button::Button;
+use fltk::draw;
 use fltk::enums::{Align, Color, Font, FrameType};
 use fltk::frame::Frame;
-use fltk::group::Flex;
+use fltk::group::{Flex, Group};
 use fltk::input::Input;
 use fltk::menu::Choice;
 use fltk::misc::Progress;
 use fltk::prelude::*;
+use fltk::tree::Tree;
+
+use crate::ui::theme_mode::{self, ThemeMode};
 
 /// RGB 三元组（便于复用与派生）
 pub type Rgb = (u8, u8, u8);
 
-// ---------- 配色 ----------
-/// 窗口底色（浅灰蓝）
-pub const BG: Rgb = (0xF3, 0xF5, 0xFA);
-/// 卡片底色
-pub const CARD: Rgb = (0xFF, 0xFF, 0xFF);
-/// 输入框/次级按钮底色
-pub const INPUT_BG: Rgb = (0xE6, 0xEC, 0xF7);
-/// 卡片分隔线/边框
-pub const BORDER: Rgb = (0xE3, 0xE8, 0xF1);
-/// 主文字色
-pub const TEXT: Rgb = (0x1F, 0x29, 0x37);
-/// 次要文字色
-pub const MUTED: Rgb = (0x6B, 0x72, 0x80);
-/// 主色（操作蓝）
-pub const PRIMARY: Rgb = (0x2F, 0x6F, 0xED);
-/// 主色按下态
-pub const PRIMARY_DARK: Rgb = (0x15, 0x3D, 0xB4);
-/// 主色悬停态（比 PRIMARY 明显变亮，一眼能看出）
-pub const PRIMARY_HOVER: Rgb = (0x5B, 0x97, 0xF7);
-/// 浅底按钮悬停底色（比 INPUT_BG 清晰可辨的浅蓝）
-pub const HOVER_SOFT: Rgb = (0xC9, 0xDB, 0xFA);
-/// 浅底按钮按下底色（比 HOVER_SOFT 更深一档）
-pub const PRESS_SOFT: Rgb = (0xAC, 0xC8, 0xF6);
-/// 主色浅底（次级按钮/选中行）
-pub const PRIMARY_SOFT: Rgb = (0xE8, 0xF0, 0xFE);
-/// 成功色
-pub const SUCCESS: Rgb = (0x15, 0x9C, 0x4A);
-/// 警告色
-pub const WARN: Rgb = (0xD9, 0x5B, 0x0B);
-/// 错误/倒计时色
-pub const DANGER: Rgb = (0xD3, 0x2F, 0x2F);
-/// 页头底色
-pub const HEADER_BG: Rgb = (0xFF, 0xFF, 0xFF);
-/// 树选中行底色（浅蓝，保证黑字可读）
-pub const SELECTION: Rgb = (0xDB, 0xE7, 0xFF);
+// ==================== 主题模式 ====================
 
-pub fn rgb((r, g, b): Rgb) -> Color {
+/// 当前主题是否为深色
+pub fn is_dark() -> bool {
+    match get_mode() {
+        ThemeMode::Auto => is_system_dark(),
+        ThemeMode::Dark => true,
+        ThemeMode::Light => false,
+    }
+}
+
+fn is_system_dark() -> bool {
+    match theme_mode::ThemeMode::detect_system() {
+        theme_mode::ThemeMode::Dark => true,
+        _ => false,
+    }
+}
+
+/// 获取当前主题模式
+pub fn get_mode() -> ThemeMode {
+    ThemeMode::get()
+}
+
+/// 模式的配置文件名（config.ini `theme_mode` 的取值）
+pub fn mode_name(mode: ThemeMode) -> &'static str {
+    match mode {
+        ThemeMode::Light => "light",
+        ThemeMode::Dark => "dark",
+        ThemeMode::Auto => "auto",
+    }
+}
+
+/// 主题切换按钮的标签：只反映两档（明亮/深色），按当前**生效**主题。
+///
+/// 【为什么不用 emoji】FLTK 仅使用全局字体（Microsoft YaHei UI）绘制文字，
+/// 不会回退到彩色 emoji 字体（Segoe UI Emoji），🌓/☀️/🌑 会显示成豆腐块。
+/// 【为什么没有 Auto】按要求只在启动时按系统深浅色自动选择一次，
+/// 运行中的切换只在两档之间循环，不再常驻检测系统主题变化。
+pub fn theme_btn_text() -> &'static str {
+    if is_dark() {
+        "深色"
+    } else {
+        "明亮"
+    }
+}
+
+/// 设置主题模式
+pub fn set_mode(mode: ThemeMode) {
+    ThemeMode::set(mode);
+    LAST_DARK_STORE.store(is_dark(), Ordering::Relaxed);
+    apply_theme();
+}
+
+/// 上一次生效主题（用于 Auto 模式下检测"系统主题变了没有"）
+static LAST_DARK_STORE: AtomicBool = AtomicBool::new(false);
+
+/// 同步系统主题到当前模式（Auto 模式使用系统主题）。
+/// 返回 `true` 表示生效主题发生变化，调用方应刷新整个控件树。
+pub fn sync_from_system() -> bool {
+    let mut changed = false;
+    if get_mode() == ThemeMode::Auto {
+        let now = is_dark();
+        if now != LAST_DARK_STORE.load(Ordering::Relaxed) {
+            LAST_DARK_STORE.store(now, Ordering::Relaxed);
+            apply_theme();
+            changed = true;
+        }
+    }
+    changed
+}
+
+/// 应用当前主题到全局样式。
+/// FLTK 的三类全局色分别驱动：普通控件底色 / 弹出菜单、Choice 下拉等
+/// 亮底（FL_BACKGROUND2_COLOR）/ 默认前景（FL_FOREGROUND_COLOR）。
+/// 逐控件显式设置过的颜色不受影响，由 `refresh_tree` 统一重刷。
+fn apply_theme() {
+    app::set_background_color(current::bg().0, current::bg().1, current::bg().2);
+    app::set_background2_color(current::card().0, current::card().1, current::card().2);
+    app::set_foreground_color(current::text().0, current::text().1, current::text().2);
+}
+
+// ==================== 配色定义 ====================
+
+/// 浅色主题配色
+pub mod light {
+    use super::Rgb;
+    pub const BG: Rgb = (0xF5, 0xF7, 0xFC);
+    pub const CARD: Rgb = (0xFF, 0xFF, 0xFF);
+    pub const INPUT_BG: Rgb = (0xEC, 0xF0, 0xF8);
+    pub const BORDER: Rgb = (0xE1, 0xE6, 0xF1);
+    pub const TEXT: Rgb = (0x19, 0x22, 0x33);
+    pub const MUTED: Rgb = (0x67, 0x6E, 0x80);
+    pub const PRIMARY: Rgb = (0x25, 0x63, 0xEB);
+    pub const PRIMARY_DARK: Rgb = (0x1D, 0x4E, 0xD8);
+    pub const PRIMARY_HOVER: Rgb = (0x3D, 0x83, 0xF6);
+    pub const HOVER_SOFT: Rgb = (0xD6, 0xE1, 0xFB);
+    pub const PRESS_SOFT: Rgb = (0xB9, 0xCC, 0xF7);
+    pub const PRIMARY_SOFT: Rgb = (0xE5, 0xEE, 0xFD);
+    pub const SUCCESS: Rgb = (0x17, 0xA3, 0x4A);
+    pub const WARN: Rgb = (0xD9, 0x77, 0x06);
+    pub const DANGER: Rgb = (0xDC, 0x26, 0x26);
+    pub const HEADER_BG: Rgb = (0xFF, 0xFF, 0xFF);
+    pub const SELECTION: Rgb = (0xD8, 0xE4, 0xFF);
+}
+
+/// 深色主题配色
+pub mod dark {
+    use super::Rgb;
+    pub const BG: Rgb = (0x15, 0x17, 0x1E);
+    pub const CARD: Rgb = (0x20, 0x23, 0x2D);
+    pub const INPUT_BG: Rgb = (0x2B, 0x2F, 0x3A);
+    pub const BORDER: Rgb = (0x38, 0x3D, 0x4A);
+    pub const TEXT: Rgb = (0xE4, 0xE8, 0xF2);
+    pub const MUTED: Rgb = (0x92, 0x99, 0xAD);
+    pub const PRIMARY: Rgb = (0x4D, 0x8E, 0xF7);
+    pub const PRIMARY_DARK: Rgb = (0x2F, 0x70, 0xE0);
+    pub const PRIMARY_HOVER: Rgb = (0x71, 0xA3, 0xFA);
+    pub const HOVER_SOFT: Rgb = (0x39, 0x3F, 0x51);
+    pub const PRESS_SOFT: Rgb = (0x31, 0x36, 0x45);
+    pub const PRIMARY_SOFT: Rgb = (0x2B, 0x33, 0x45);
+    pub const SUCCESS: Rgb = (0x3E, 0xD6, 0x8C);
+    pub const WARN: Rgb = (0xF4, 0xB8, 0x4A);
+    pub const DANGER: Rgb = (0xF0, 0x6B, 0x6B);
+    pub const HEADER_BG: Rgb = (0x1A, 0x1D, 0x25);
+    pub const SELECTION: Rgb = (0x2E, 0x46, 0x74);
+}
+
+/// Tech Blue 主色调（#2563EB / #4D8EF7）
+/// 亮色模式下用浅蓝渐变，深色模式下用深蓝渐变。
+pub const TECH_BLUE_LIGHT: Rgb = (0x25, 0x63, 0xEB);   // #2563EB
+pub const TECH_BLUE_DARK: Rgb = (0x4D, 0x8E, 0xF7);     // #4D8EF7
+
+/// 当前主题的配色（返回当前主题的值）
+mod current {
+    use super::Rgb;
+    use super::is_dark;
+
+    pub fn bg() -> Rgb { if is_dark() { super::dark::BG } else { super::light::BG } }
+    pub fn card() -> Rgb { if is_dark() { super::dark::CARD } else { super::light::CARD } }
+    pub fn input_bg() -> Rgb { if is_dark() { super::dark::INPUT_BG } else { super::light::INPUT_BG } }
+    pub fn border() -> Rgb { if is_dark() { super::dark::BORDER } else { super::light::BORDER } }
+    pub fn text() -> Rgb { if is_dark() { super::dark::TEXT } else { super::light::TEXT } }
+    pub fn muted() -> Rgb { if is_dark() { super::dark::MUTED } else { super::light::MUTED } }
+    pub fn primary() -> Rgb { if is_dark() { super::dark::PRIMARY } else { super::light::PRIMARY } }
+    pub fn primary_dark() -> Rgb { if is_dark() { super::dark::PRIMARY_DARK } else { super::light::PRIMARY_DARK } }
+    pub fn primary_hover() -> Rgb { if is_dark() { super::dark::PRIMARY_HOVER } else { super::light::PRIMARY_HOVER } }
+    pub fn hover_soft() -> Rgb { if is_dark() { super::dark::HOVER_SOFT } else { super::light::HOVER_SOFT } }
+    pub fn press_soft() -> Rgb { if is_dark() { super::dark::PRESS_SOFT } else { super::light::PRESS_SOFT } }
+    pub fn primary_soft() -> Rgb { if is_dark() { super::dark::PRIMARY_SOFT } else { super::light::PRIMARY_SOFT } }
+    pub fn success() -> Rgb { if is_dark() { super::dark::SUCCESS } else { super::light::SUCCESS } }
+    pub fn warn() -> Rgb { if is_dark() { super::dark::WARN } else { super::light::WARN } }
+    pub fn danger() -> Rgb { if is_dark() { super::dark::DANGER } else { super::light::DANGER } }
+    pub fn header_bg() -> Rgb { if is_dark() { super::dark::HEADER_BG } else { super::light::HEADER_BG } }
+    pub fn selection() -> Rgb { if is_dark() { super::dark::SELECTION } else { super::light::SELECTION } }
+}
+
+// 导出当前主题的配色函数
+pub fn BG() -> Rgb { current::bg() }
+pub fn CARD() -> Rgb { current::card() }
+pub fn INPUT_BG() -> Rgb { current::input_bg() }
+pub fn BORDER() -> Rgb { current::border() }
+pub fn TEXT() -> Rgb { current::text() }
+pub fn MUTED() -> Rgb { current::muted() }
+pub fn PRIMARY() -> Rgb { current::primary() }
+pub fn PRIMARY_DARK() -> Rgb { current::primary_dark() }
+pub fn PRIMARY_HOVER() -> Rgb { current::primary_hover() }
+pub fn HOVER_SOFT() -> Rgb { current::hover_soft() }
+pub fn PRESS_SOFT() -> Rgb { current::press_soft() }
+pub fn PRIMARY_SOFT() -> Rgb { current::primary_soft() }
+pub fn SUCCESS() -> Rgb { current::success() }
+pub fn WARN() -> Rgb { current::warn() }
+pub fn DANGER() -> Rgb { current::danger() }
+pub fn HEADER_BG() -> Rgb { current::header_bg() }
+pub fn SELECTION() -> Rgb { current::selection() }
+
+// ==================== 主题切换时控件颜色重映射 ====================
+
+/// 浅色/深色两套配色的配对表（同一角色两两对应，顺序一致）。
+///
+/// 【为什么要这张表】FLTK 没有样式表，控件颜色在创建时就被写死成当时的
+/// 主题值。切换主题时无法逐个重建控件，只能靠"旧值 → 新值"映射：
+/// 遍历控件树，把命中旧主题色的颜色替换成新主题下同一角色的颜色。
+const ROLE_PAIRS: [(Rgb, Rgb); 17] = [
+    (light::BG, dark::BG),
+    (light::CARD, dark::CARD),
+    (light::INPUT_BG, dark::INPUT_BG),
+    (light::BORDER, dark::BORDER),
+    (light::TEXT, dark::TEXT),
+    (light::MUTED, dark::MUTED),
+    (light::PRIMARY, dark::PRIMARY),
+    (light::PRIMARY_DARK, dark::PRIMARY_DARK),
+    (light::PRIMARY_HOVER, dark::PRIMARY_HOVER),
+    (light::HOVER_SOFT, dark::HOVER_SOFT),
+    (light::PRESS_SOFT, dark::PRESS_SOFT),
+    (light::PRIMARY_SOFT, dark::PRIMARY_SOFT),
+    (light::SUCCESS, dark::SUCCESS),
+    (light::WARN, dark::WARN),
+    (light::DANGER, dark::DANGER),
+    (light::HEADER_BG, dark::HEADER_BG),
+    (light::SELECTION, dark::SELECTION),
+];
+
+/// 把一个"创建时写进控件的旧主题色"映射到当前主题下的同角色颜色。
+/// 找不到（非主题调色板颜色，例如纯白/纯黑按钮字、透明底）时返回 `None`，
+/// 调用方应跳过不改。
+fn remap_role(color: Color) -> Option<Color> {
+    let (r, g, b) = color.to_rgb();
+    // alpha 都是 255 时 to_rgb 才等价；本工程所有主题色都经 rgb() 构造。
+    let target = if is_dark() {
+        ROLE_PAIRS
+            .iter()
+            .find(|(light, _)| *light == (r, g, b))
+            .map(|(_, dark)| *dark)
+    } else {
+        ROLE_PAIRS
+            .iter()
+            .find(|(_, dark)| *dark == (r, g, b))
+            .map(|(light, _)| *light)
+    };
+    target.map(|(r, g, b)| Color::from_rgba_tuple((r, g, b, 255)))
+}
+
+/// 递归刷新控件树的所有主题相关颜色。
+///
+/// 对每个控件处理：
+/// - `color()`（底色）与 `selection_color()`（按下底色）：命中调色板即重映射；
+/// - `label_color()`（文字色）：重映射，但**跳过纯白**——主按钮的
+///   "白字"是有意为之（深浅两态都用白），不能被映射成卡片底色；
+/// - Input 的 `text_color()`（输入文字色）单独处理（属于 InputExt）；
+/// - Tree 的 `set_item_label_fgcolor()`（树节点文字色）单独处理，
+///   它由 FLTK 内部绘制，不属于普通控件 label。
+pub fn refresh_tree<W: WidgetExt>(w: &mut W) {
+    restyle_widget(w);
+    // 递归进入组（Group/Tabs/Flex/Wizard 等）的子控件继续刷新。
+    // 注意：Tree 也是 Group 子类，但其内部树节点不是普通子控件，
+    // 文字色由 set_item_label_fgcolor 在 restyle_widget 里单独处理。
+    if let Some(g) = Group::from_dyn_widget(w) {
+        let n = g.children();
+        for i in 0..n {
+            if let Some(mut c) = g.child(i) {
+                refresh_tree(&mut c);
+            }
+        }
+    }
+}
+
+/// 刷新单个控件的主题相关颜色。
+fn restyle_widget<W: WidgetExt>(w: &mut W) {
+    // 底色 / 按下底色
+    if let Some(c) = remap_role(w.color()) {
+        w.set_color(c);
+    }
+    if let Some(c) = remap_role(w.selection_color()) {
+        w.set_selection_color(c);
+    }
+    // 文字色（跳过纯白：主按钮白字不能映射成卡片底色）
+    if w.label_color() != Color::White {
+        if let Some(c) = remap_role(w.label_color()) {
+            w.set_label_color(c);
+        }
+    }
+    // 输入框文字色
+    if let Some(mut input) = Input::from_dyn_widget(w) {
+        if let Some(c) = remap_role(input.text_color()) {
+            input.set_text_color(c);
+        }
+    }
+    // 树节点文字色（FLTK 内部绘制，与控件 label 色无关）
+    if let Some(mut t) = Tree::from_dyn_widget(w) {
+        t.set_item_label_fgcolor(rgb(current::text()));
+        t.set_item_label_bgcolor(rgb(current::card()));
+        // 【逐条目重刷】Fl_Tree_Item 构造时会把当时的主题色快照进条目内部
+        // （_labelfgcolor/_labelbgcolor），之后既不跟随控件颜色也不跟随
+        // prefs —— 只改上面两行会漏掉已存在的条目，表现为深色切浅色后
+        // 磁盘列表仍是旧底色。必须遍历所有条目逐个重设。
+        let mut cursor = t.first();
+        while let Some(mut item) = cursor {
+            item.set_label_fgcolor(rgb(current::text()));
+            item.set_label_bgcolor(rgb(current::card()));
+            cursor = t.next(&item);
+        }
+    }
+}
+
+pub trait IntoRgb {
+    fn into_rgb(self) -> Rgb;
+}
+
+impl IntoRgb for Rgb {
+    fn into_rgb(self) -> Rgb {
+        self
+    }
+}
+
+impl<F: Fn() -> Rgb> IntoRgb for F {
+    fn into_rgb(self) -> Rgb {
+        self()
+    }
+}
+
+pub fn rgb(color: impl IntoRgb) -> Color {
+    let (r, g, b) = color.into_rgb();
     Color::from_rgba_tuple((r, g, b, 255))
 }
+
+/// 绘制窗口背景渐变（含子控件绘制，确保子控件仍能正常渲染）。
+///
+/// 【原理】FLTK 的 `draw` 回调只在控件**自身**绘制阶段运行：回调内画完
+/// 后必须手动调用 `draw_children()`，否则子控件不会被渲染。窗口（DoubleWindow）
+/// 的 y 为 0、画布即客户区，按行 `draw_xyline` 从上到下插值两色即可。
+///
+/// 【注意】此函数只负责画"背景渐变"，不能用于**有自绘底色**的普通控件
+/// （如卡片 Flex）——那类控件应使用 `style_glass`。
+pub fn draw_bg_gradient<W: WidgetBase + GroupExt>(w: &mut W) {
+    let x = w.x();
+    let y = w.y();
+    let width = w.width();
+    let height = w.height();
+    
+    // Tech Blue 渐变：顶部使用浅 Tech Blue (#2563EB)，底部过渡到主题底色
+    // 亮模式下：浅蓝 → 浅灰底（营造现代感）
+    // 暗模式下：深灰 → 深蓝底（#4D8EF7 渐变）
+    let (r1, g1, b1) = if is_dark() { (0x4D, 0x8E, 0xF7) } else { (0x25, 0x63, 0xEB) };  // TECH_BLUE_*
+    let (r2, g2, b2) = current::bg();
+    
+    // 性能优化：按行绘制渐变，在大窗口上可能稍慢，但 FLTK 绘图非常高效
+    for i in 0..=height {
+        let ratio = i as f32 / height as f32;
+        let r = (r1 as f32 * (1.0 - ratio) + r2 as f32 * ratio) as u8;
+        let g = (g1 as f32 * (1.0 - ratio) + g2 as f32 * ratio) as u8;
+        let b = (b1 as f32 * (1.0 - ratio) + b2 as f32 * ratio) as u8;
+        draw::set_draw_rgb_color(r, g, b);
+        draw::draw_xyline(x, y + i, x + width);
+    }
+    
+    // 绘制子控件（必须调用，否则子控件不会被渲染）
+    w.draw_children();
+}
+
+/// 玻璃拟态效果（简单实现：半透明覆盖层）。
+///
+/// 【用法】调用此函数会为窗口添加一个 draw 回调，依次绘制：
+/// 1. Tech Blue 背景渐变
+/// 2. 一层 140/160 alpha 的半透明遮罩，营造磨砂玻璃感
+///
+/// 【兼容性】`WidgetBase + GroupExt`：Window 本身是 Group 子类，需同时
+/// 实现这两个 trait 才能调用 `draw_children()`。
+///
+/// 【示例】
+/// ```ignore
+/// let mut win = DoubleWindow::new(x, y, w, h, "标题");
+/// theme::style_glass(&mut win);
+/// ```
+pub fn style_glass<W: WidgetBase + GroupExt>(w: &mut W) {
+    w.draw(|w| {
+        let x = w.x();
+        let y = w.y();
+        let width = w.width();
+        let height = w.height();
+
+        // 绘制背景渐变
+        draw_bg_gradient(w);
+
+        // 绘制一层半透明白色/黑色遮罩，模拟磨砂玻璃
+        let alpha_color = if is_dark() {
+            Color::from_rgba_tuple((40, 44, 52, 160))
+        } else {
+            Color::from_rgba_tuple((255, 255, 255, 140))
+        };
+
+        draw::set_draw_color(alpha_color);
+        draw::draw_rect_fill(x, y, width, height, alpha_color);
+    });
+}
+
+// ==================== 初始化 ====================
 
 /// 全局字体与基础尺寸（必须在创建任何控件之前调用）。
 pub fn init() {
     // 中文界面优先用系统自带雅黑；缺失时 fltk 会回落到 Helvetica。
     app::set_font(Font::by_name("Microsoft YaHei UI"));
     app::set_font_size(12);
-    app::set_background_color(BG.0, BG.1, BG.2);
+    LAST_DARK_STORE.store(is_dark(), Ordering::Relaxed);
+    apply_theme();
 }
 
-/// 把 Flex 变成白色圆角卡片。
+// ==================== 样式函数 ====================
+
+/// 把 Flex 变成圆角卡片。
 pub fn style_card(f: &mut Flex) {
     f.set_frame(FrameType::RFlatBox);
-    f.set_color(rgb(CARD));
+    f.set_color(rgb(current::card()));
+    f.set_margins(10, 10, 10, 10);
+    f.set_spacing(5);
+}
+
+/// 卡片内嵌分组（透明底、保留边距与间距）：外框已合并到大卡片时使用。
+pub fn style_section(f: &mut Flex) {
+    f.set_frame(FrameType::NoBox);
+    f.set_color(rgb(current::card()));
     f.set_margins(10, 10, 10, 10);
     f.set_spacing(5);
 }
@@ -80,7 +438,7 @@ pub fn style_card(f: &mut Flex) {
 /// 透明背景的普通容器（用于卡片列等不需要自绘背景的地方）。
 pub fn style_plain(f: &mut Flex) {
     f.set_frame(FrameType::NoBox);
-    f.set_color(rgb(BG));
+    f.set_color(rgb(current::bg()));
     f.set_margins(0, 0, 0, 0);
 }
 
@@ -89,8 +447,8 @@ pub fn title(txt: &str) -> Frame {
     let mut f = Frame::default().with_label(txt);
     f.set_align(Align::Left | Align::Inside);
     f.set_label_font(Font::HelveticaBold);
-    f.set_label_size(12);
-    f.set_label_color(rgb(TEXT));
+    f.set_label_size(13);
+    f.set_label_color(rgb(current::text()));
     f
 }
 
@@ -98,7 +456,7 @@ pub fn title(txt: &str) -> Frame {
 pub fn form_label(txt: &str) -> Frame {
     let mut f = Frame::default().with_label(txt);
     f.set_align(Align::Left | Align::Inside);
-    f.set_label_color(rgb(MUTED));
+    f.set_label_color(rgb(current::muted()));
     f.set_label_size(12);
     f
 }
@@ -107,23 +465,23 @@ pub fn form_label(txt: &str) -> Frame {
 pub fn label(txt: &str) -> Frame {
     let mut f = Frame::default().with_label(txt);
     f.set_align(Align::Left | Align::Inside);
-    f.set_label_color(rgb(TEXT));
+    f.set_label_color(rgb(current::text()));
     f.set_label_size(12);
     f
 }
 
-/// 主操作按钮（实心蓝底白字；悬停明显变亮、按下明显变深）。
+/// 主操作按钮（实心底色白字；悬停明显变亮、按下明显变深）。
 pub fn primary_button(txt: &str) -> Button {
     let mut b = Button::default().with_label(txt);
     b.set_frame(FrameType::RFlatBox);
     b.set_down_frame(FrameType::RFlatBox);
-    b.set_color(rgb(PRIMARY));
-    b.set_selection_color(rgb(PRIMARY_DARK)); // 按下态底色
+    b.set_color(rgb(current::primary()));
+    b.set_selection_color(rgb(current::primary_dark()));
     b.set_label_color(Color::White);
     b.set_label_font(Font::HelveticaBold);
     b.set_label_size(13);
     b.set_align(Align::Center | Align::Inside);
-    add_hover_effect(&mut b, PRIMARY_HOVER);
+    add_hover_effect(&mut b, current::primary_hover());
     b
 }
 
@@ -132,12 +490,12 @@ pub fn secondary_button(txt: &str) -> Button {
     let mut b = Button::default().with_label(txt);
     b.set_frame(FrameType::RFlatBox);
     b.set_down_frame(FrameType::RFlatBox);
-    b.set_color(rgb(INPUT_BG));
-    b.set_selection_color(rgb(PRESS_SOFT));
-    b.set_label_color(rgb(PRIMARY));
+    b.set_color(rgb(current::input_bg()));
+    b.set_selection_color(rgb(current::press_soft()));
+    b.set_label_color(rgb(current::primary()));
     b.set_label_size(12);
     b.set_align(Align::Center | Align::Inside);
-    add_hover_effect(&mut b, HOVER_SOFT);
+    add_hover_effect(&mut b, current::primary_soft());
     b
 }
 
@@ -146,12 +504,12 @@ pub fn ghost_button(txt: &str) -> Button {
     let mut b = Button::default().with_label(txt);
     b.set_frame(FrameType::RFlatBox);
     b.set_down_frame(FrameType::RFlatBox);
-    b.set_color(rgb(INPUT_BG));
-    b.set_selection_color(rgb(PRESS_SOFT));
-    b.set_label_color(rgb(PRIMARY));
+    b.set_color(rgb(current::input_bg()));
+    b.set_selection_color(rgb(current::press_soft()));
+    b.set_label_color(rgb(current::primary()));
     b.set_label_size(12);
     b.set_align(Align::Center | Align::Inside);
-    add_hover_effect(&mut b, HOVER_SOFT);
+    add_hover_effect(&mut b, current::primary_soft());
     b
 }
 
@@ -161,29 +519,36 @@ pub fn tree_button(txt: &str) -> Button {
     let mut b = Button::default().with_label(txt);
     b.set_frame(FrameType::RFlatBox);
     b.set_down_frame(FrameType::RFlatBox);
-    b.set_color(rgb(INPUT_BG));              // 默认浅底
-    b.set_selection_color(rgb(PRESS_SOFT));  // 按下时深一档浅蓝
-    b.set_label_color(rgb(PRIMARY));         // 主色文字
+    b.set_color(rgb(current::input_bg()));
+    b.set_selection_color(rgb(current::press_soft()));
+    b.set_label_color(rgb(current::primary()));
     b.set_label_font(Font::HelveticaBold);
     b.set_label_size(11);
     b.set_align(Align::Center | Align::Inside);
-    add_hover_effect(&mut b, HOVER_SOFT);
+    add_hover_effect(&mut b, current::primary_soft());
     b
 }
 
 /// 给按钮添加悬停效果（进入/离开时切换颜色）。
 /// 需要在按钮创建后立即调用，`hover_color` 为鼠标进入时的底色。
-pub fn add_hover_effect<B: fltk::prelude::WidgetBase>(btn: &mut B, hover_color: Rgb) {
+/// 支持传入 RGB 元组或函数引用（如 `theme::PRIMARY_SOFT`）。
+///
+/// 【主题切换兼容】进入/离开时都会先经 `remap_role` 重映射到当前主题的
+/// 同角色颜色——主题切换后按钮底色已变，闭包里捕获的创建期颜色直接写回
+/// 会把旧主题色刷回去。
+pub fn add_hover_effect<B: fltk::prelude::WidgetBase>(btn: &mut B, hover_color: impl IntoRgb) {
     let default_color = btn.color();
+    let hover_rgb = hover_color.into_rgb();
     btn.handle(move |w, ev| {
         match ev {
             fltk::enums::Event::Enter => {
-                w.set_color(rgb(hover_color));
+                w.set_color(remap_role(Color::from_rgba_tuple((hover_rgb.0, hover_rgb.1, hover_rgb.2, 255)))
+                    .unwrap_or_else(|| rgb((hover_rgb.0, hover_rgb.1, hover_rgb.2))));
                 w.redraw();
                 true
             }
             fltk::enums::Event::Leave => {
-                w.set_color(default_color);
+                w.set_color(remap_role(default_color).unwrap_or(default_color));
                 w.redraw();
                 true
             }
@@ -195,7 +560,7 @@ pub fn add_hover_effect<B: fltk::prelude::WidgetBase>(btn: &mut B, hover_color: 
 /// 分段选择容器（浅底圆角条，GPT/MBR 等互斥选项放进里面形成"分段"外观）。
 pub fn style_segmented(f: &mut Flex) {
     f.set_frame(FrameType::RFlatBox);
-    f.set_color(rgb(INPUT_BG));
+    f.set_color(rgb(current::input_bg()));
     f.set_margins(3, 3, 3, 3);
     f.set_spacing(3);
 }
@@ -206,35 +571,35 @@ pub fn segmented_item(w: &mut impl ButtonExt) {
     w.set_down_frame(FrameType::NoBox);
     w.set_color(Color::TransparentBg);
     w.set_selection_color(Color::TransparentBg);
-    w.set_label_color(rgb(TEXT));
+    w.set_label_color(rgb(current::text()));
     w.set_label_size(12);
 }
 
 /// 输入框样式（浅底圆角填充）。
 pub fn style_input(i: &mut Input) {
     i.set_frame(FrameType::RFlatBox);
-    i.set_color(rgb(INPUT_BG));
-    i.set_text_color(rgb(TEXT));
+    i.set_color(rgb(current::input_bg()));
+    i.set_text_color(rgb(current::text()));
     i.set_text_size(12);
 }
 
 /// 下拉框样式。
 pub fn style_choice(c: &mut Choice) {
     c.set_frame(FrameType::RFlatBox);
-    c.set_color(rgb(INPUT_BG));
-    c.set_text_color(rgb(TEXT));
+    c.set_color(rgb(current::input_bg()));
+    c.set_text_color(rgb(current::text()));
     c.set_text_size(12);
 }
 
 /// 复选框样式（仅统一文字颜色/字号）。
 pub fn style_check(c: &mut impl WidgetExt) {
-    c.set_label_color(rgb(TEXT));
+    c.set_label_color(rgb(current::text()));
     c.set_label_size(12);
 }
 
 /// 进度条样式。
 pub fn style_progress(p: &mut Progress) {
     p.set_frame(FrameType::RFlatBox);
-    p.set_color(rgb(INPUT_BG));
-    p.set_selection_color(rgb(PRIMARY));
+    p.set_color(rgb(current::input_bg()));
+    p.set_selection_color(rgb(current::primary()));
 }

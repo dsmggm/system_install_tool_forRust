@@ -158,6 +158,17 @@ fn main() {
     // 3. 加载配置（不存在则生成默认，对应文档 §8.1 步骤 1）
     let app_config = config::settings::AppConfig::load(None);
 
+    // 3.1 设置主题模式并初始化
+    use ui::theme_mode::ThemeMode;
+    use ui::theme;
+    
+    let theme_mode = match app_config.theme_mode.as_str() {
+        "light" => ThemeMode::Light,
+        "dark" => ThemeMode::Dark,
+        _ => ThemeMode::Auto,
+    };
+    theme::set_mode(theme_mode);
+
     // 4. 启动 GUI（阻塞至窗口关闭）
     if let Err(e) = ui::run(app_config) {
         log::error!("GUI 运行失败: {e}");

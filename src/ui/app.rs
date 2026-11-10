@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use fltk::button::{Button, CheckButton, RadioRoundButton};
-use fltk::enums::FrameType;
+use fltk::enums::{Align, FrameType};
 use fltk::frame::Frame;
 use fltk::group::{Flex, Group};
 use fltk::input::Input;
@@ -35,9 +35,11 @@ use crate::config::settings::AppConfig;
 
 use super::ghost::relative_gho_src;
 use super::log_panel::LogPanel;
+use super::msg;
 use super::state::{Message, PendingPartition};
 use super::theme;
 use super::{app_icon, one_click, restart};
+use super::theme_mode::ThemeMode;
 
 /// 自动刷新间隔（秒），对应 `App.AUTO_REFRESH_INTERVAL`
 const AUTO_REFRESH_INTERVAL: f64 = 5.0;
@@ -70,7 +72,9 @@ struct AppUi {
     // 工具栏
     restore_cb: CheckButton,
     countdown_label: Frame,
+    current_scheme_label: Frame,
     log_toggle_btn: Button,
+    theme_btn: Button,
     save_scheme_btn: Button,
     load_scheme_btn: Button,
     // 磁盘树
@@ -113,7 +117,6 @@ struct AppUi {
     // 底部
     install_btn: Button,
     progress: Progress,
-    current_scheme_label: Frame,
     // 日志
     log_group: Flex,
     log_panel: LogPanel,
@@ -197,88 +200,294 @@ impl App {
         win.set_color(theme::rgb(theme::BG));
         // 设置窗口图标（标题栏 + 任务栏）
         win.set_icon(Some(app_icon()));
+        // 自定义绘制：标题栏与窗口底色融合为 Tech Blue 渐变
+        win.draw(|w| theme::draw_bg_gradient(w));
         win.begin();
 
         // ---------- 根布局（纵向：页头 / 主体 / 页脚 / 日志）----------
+        // 页面留白 8px，各横带（页头/主体/页脚/日志）之间留 8px 背景，
+        // 让"主体大卡片"与页头、页脚有明确分区。
         let mut root = Flex::default().column().size_of_parent();
-        root.set_margin(0);
-        root.set_spacing(0);
+        root.set_margin(8);
+        root.set_spacing(8);
         root.set_color(theme::rgb(theme::BG));
 
         // ===== 页头：自动还原开关（左）/ 倒计时 / 日志开关 =====
-        let header_ui = super::layout::create_header(&config);
-        let restore_cb = header_ui.restore_cb;
-        let countdown_label = header_ui.countdown_label;
-        let log_toggle_btn = header_ui.log_toggle_btn;
-        root.fixed(&header_ui.header, 48);
+        // 高度 48 = 上下内边距 18 + 行 26 + 下 4
+        // 【标题栏融合】页头不再自绘纯色底，改为 NoBox 透明，让窗口的
+        // Tech Blue 渐变背景直接透出来，页头与窗口背景融为一体。
+        let mut header = Flex::default().column();
+        header.set_frame(FrameType::NoBox);
+        header.set_margins(16, 10, 16, 10);
+        header.set_spacing(0);
 
-        // ===== 主体：左（磁盘与分区）/ 右（安装设置卡片列）=====
+        let mut head_row = Flex::default().row();
+        head_row.set_frame(FrameType::NoBox);
+        // 自动还原开关：勾选后显示运行态文案（绿），取消后显示停止态文案（红）。
+        let mut restore_cb = CheckButton::default().with_label("");
+        restore_cb.set_checked(config.restore_enabled);
+        theme::style_check(&mut restore_cb);
+        restore_cb.set_label_color(theme::rgb(theme::DANGER));
+        head_row.fixed(&restore_cb, 130);
+        // 倒计时标签：紧跟「自动还原」开关之后，左对齐（不与右侧按钮挤一行）
+        let mut countdown_label = theme::label("");
+        countdown_label.set_align(Align::Left | Align::Inside);
+        countdown_label.set_label_color(theme::rgb(theme::DANGER));
+        head_row.fixed(&countdown_label, 158);
+        let _head_spacer = Frame::default();
+        let log_toggle_btn = theme::ghost_button("显示日志");
+        head_row.fixed(&log_toggle_btn, 92);
+        // 主题切换按钮：只反映当前生效的两档（明亮/深色）
+        let theme_btn = theme::ghost_button(theme::theme_btn_text());
+        head_row.fixed(&theme_btn, 52);
+        head_row.end();
+
+        header.fixed(&head_row, 26);
+        header.end();
+        root.fixed(&header, 52);
+
+        // —— 主体：单一大卡片，内含左（磁盘与分区）/ 右（安装设置分组）=====
+        // 外框整成一个圆角卡片；内部左右两列用 1px 竖向分隔线区隔。
         let mut main = Flex::default().row();
-        main.set_margin(14);
-        main.set_spacing(14);
-        main.set_color(theme::rgb(theme::BG));
+        theme::style_card(&mut main);
+        // 玻璃拟态：半透明遮罩 + 渐变，让卡片有磨砂质感
+        theme::style_glass(&mut main);
+        main.set_margins(14, 12, 14, 12);
+        main.set_spacing(24); // 左列 / 竖线 / 右列 之间各 24px
+        main.set_color(theme::rgb(theme::CARD));
 
-        // —— 左：磁盘与分区卡片 ——
-        let disk_tree_ui = super::layout::create_disk_tree();
-        let left = disk_tree_ui.left_col;
-        let tree = disk_tree_ui.tree;
+        // —— 左：磁盘与分区（卡片内分组）——
+        let mut left = Flex::default().column();
+        theme::style_section(&mut left);
+        let left_title = theme::title("磁盘与分区");
+        left.fixed(&left_title, 20);
+        let mut tree = Tree::new(0, 0, 0, 0, None);
+        // 【去掉选中功能】树改为纯展示列表：点击节点不再产生选中态/
+        // 高亮（此前单选/多选行为不稳定，索性彻底禁用选中）。
+        tree.set_select_mode(fltk::tree::TreeSelect::None);
+        // 【Bug A】选中行底框改用 FlatBox，让选中行真正被填色。
+        // `Fl_Tree_Item::draw_item_content()` 绘制选中底色时走
+        //   `fl_draw_box(prefs.selectbox(), ..., bg)`，而 `bg` 就是
+        //   `selection_color()`。EngravedFrame 只描边不填色 → 选中态不可见；
+        //   FlatBox 用 `fl_rectf` 填满整行，浅蓝底 + 黑字清晰可读。
+        tree.set_select_frame(FrameType::FlatBox);
+        // 【Bug C】不显示 FLTK 默认的 "ROOT" 根节点行。
+        tree.set_show_root(false);
+        // 【Bug A】选中底色改成浅色，让选中项文字可读（深色底会触发
+        // fl_contrast 选白字，而 inactive 时底色被冲淡 → 白字浅底不可读）。
+        tree.set_selection_color(theme::rgb(theme::SELECTION));
+        // 行内控件（每硬盘一个「一键分区」按钮）与标签同行显示：
+        // FLTK 默认 DrawDefault 会用子控件**替换**节点文本，必须显式选择这个组合。
+        tree.set_item_draw_mode(fltk::tree::TreeItemDrawMode::LabelAndWidget);
+        // 行内按钮与节点文字之间留一点空隙
+        tree.set_widget_margin_left(6);
+        // 现代观感：去掉连接线、统一字号、与卡片同底色
+        tree.set_connector_style(fltk::tree::TreeConnectorStyle::None);
+        // 直接去掉树的收缩/展开功能：不显示展开箭头（用户此前反馈
+        // 收缩/展开按钮不起效果），分区子行永远展开显示。
+        tree.set_show_collapse(false);
+        tree.set_item_label_size(12);
+        // 树节点文字/底色显式绑定主题（FLTK 默认前景经常是不可控的全局色）
+        tree.set_item_label_fgcolor(theme::rgb(theme::TEXT));
+        tree.set_item_label_bgcolor(theme::rgb(theme::CARD));
+        tree.set_frame(FrameType::NoBox);
+        tree.set_color(theme::rgb(theme::CARD));
+        left.end();
         // 左列宽度随窗口收缩：右侧卡片列需要至少 401px（最宽一行固定控件
-        // 381 + 卡片内边距 20），窗口变窄时先压缩左侧磁盘树，避免右侧
-        // 复选框被裁切；窗口够宽时左列固定 470px。
-        let left_w = (win_w - 443).clamp(300, 470);
+        // 381 + 分组内边距 20），窗口变窄时先压缩左侧磁盘树，避免右侧
+        // 复选框被裁切；窗口够宽时左列固定 520px。
+        // 计算：左 + main左margin14 + 间距0 + 竖线1 + 分隔区24*2 + main右margin14 + 右列401。
+        let left_w = (win_w - 478).clamp(320, 520);
         main.fixed(&left, left_w);
 
-        // —— 右：设置卡片列 ——
+        // —— 左右两列之间的竖向分隔线（1px，随主题）——
+        let mut divider = Frame::default();
+        divider.set_frame(FrameType::FlatBox);
+        divider.set_color(theme::rgb(theme::BORDER));
+        main.fixed(&divider, 1);
+
+        // —— 右：设置分组列 ——
         let mut right = Flex::default().column();
         theme::style_plain(&mut right);
-        right.set_spacing(10);
+        right.set_spacing(6);
 
         // —— 安装源（高度 100 = 内边距 20 + 标题 18 + 间距 10 + 2 行 × 26）——
-        let install_source_ui = super::layout::create_install_source();
-        let source_group = install_source_ui.source_group;
-        let source_path_in = install_source_ui.source_path_in;
-        let browse_source_btn = install_source_ui.browse_source_btn;
-        let image_choice = install_source_ui.image_choice;
-        right.fixed(&source_group, 100);
+        let mut source_group = Flex::default().column();
+        theme::style_section(&mut source_group);
+        let source_title = theme::title("安装源");
+        source_group.fixed(&source_title, 18);
+        let mut source_row = Flex::default().row();
+        source_row.set_color(theme::rgb(theme::CARD));
+        let path_label = theme::form_label("路径");
+        source_row.fixed(&path_label, 44);
+        let mut source_path_in = Input::default();
+        source_path_in.set_readonly(true); // 路径只读：只能通过「浏览...」写入
+        theme::style_input(&mut source_path_in);
+        let browse_source_btn = theme::secondary_button("浏览...");
+        source_row.fixed(&browse_source_btn, 84);
+        source_row.end();
+        source_group.fixed(&source_row, 26);
+        let mut image_row = Flex::default().row();
+        image_row.set_color(theme::rgb(theme::CARD));
+        let img_label = theme::form_label("镜像");
+        image_row.fixed(&img_label, 44);
+        let mut image_choice = Choice::default();
+        theme::style_choice(&mut image_choice);
+        image_row.end();
+        source_group.fixed(&image_row, 26);
+        source_group.end();
+        right.fixed(&source_group, 106);
 
         // —— 目标分区（高度 98 = 内边距 20 + 标题 18 + 间距 10 + 26 + 24）——
-        let target_partition_ui = super::layout::create_target_partition();
-        let target_group = target_partition_ui.target_group;
-        let disk_choice = target_partition_ui.disk_choice;
-        let partition_preview = target_partition_ui.partition_preview;
-        right.fixed(&target_group, 98);
+        let mut target_group = Flex::default().column();
+        theme::style_section(&mut target_group);
+        let target_title = theme::title("目标位置");
+        target_group.fixed(&target_title, 18);
+        let mut disk_row = Flex::default().row();
+        disk_row.set_color(theme::rgb(theme::CARD));
+        let disk_label = theme::form_label("系统安装硬盘");
+        disk_row.fixed(&disk_label, 96);
+        let mut disk_choice = Choice::default();
+        theme::style_choice(&mut disk_choice);
+        disk_row.end();
+        target_group.fixed(&disk_row, 26);
+        let mut partition_preview = theme::label("");
+        partition_preview.set_label_color(theme::rgb(theme::MUTED));
+        target_group.fixed(&partition_preview, 24);
+        target_group.end();
+        right.fixed(&target_group, 104);
 
-        // —— GHO 还原选项（高度 132 = 内边距 20 + 标题 18 + 3 行 × 26 + 2 间距 10）
+        // —— GHO 还原选项（高度 140 = 内边距 20 + 标题 18 + 3 行 × 26 + 2 间距 10）
         //    「目标硬盘」与「目标分区」两行互斥显示，同一时刻只有 3 行可见。
-        let gho_options_ui = super::layout::create_gho_options();
-        let gho_group = gho_options_ui.gho_group;
-        let gho_mode_disk_rb = gho_options_ui.gho_mode_disk_rb;
-        let gho_mode_part_rb = gho_options_ui.gho_mode_part_rb;
-        let gho_disk_group = gho_options_ui.gho_disk_group;
-        let gho_disk_choice = gho_options_ui.gho_disk_choice;
-        let gho_part_group = gho_options_ui.gho_part_group;
-        let gho_part_choice = gho_options_ui.gho_part_choice;
-        let ghost_path_in = gho_options_ui.ghost_path_in;
-        right.fixed(&gho_group, 132);
+        let mut gho_group = Flex::default().column();
+        theme::style_section(&mut gho_group);
+        let gho_title = theme::title("GHO 还原选项");
+        gho_group.fixed(&gho_title, 18);
+        let mut gho_mode_row = Flex::default().row();
+        gho_mode_row.set_color(theme::rgb(theme::CARD));
+        let gm_label = theme::form_label("还原模式");
+        gho_mode_row.fixed(&gm_label, 62);
+        let mut gho_mode_disk_rb = RadioRoundButton::default().with_label("硬盘还原");
+        gho_mode_disk_rb.set(true);
+        theme::style_check(&mut gho_mode_disk_rb);
+        gho_mode_row.fixed(&gho_mode_disk_rb, 92);
+        let mut gho_mode_part_rb = RadioRoundButton::default().with_label("分区还原");
+        theme::style_check(&mut gho_mode_part_rb);
+        gho_mode_row.fixed(&gho_mode_part_rb, 92);
+        gho_mode_row.end();
+        gho_group.fixed(&gho_mode_row, 26);
+
+        let mut gho_disk_group = Flex::default().row();
+        gho_disk_group.set_color(theme::rgb(theme::CARD));
+        let gd_label = theme::form_label("目标硬盘");
+        gho_disk_group.fixed(&gd_label, 62);
+        let mut gho_disk_choice = Choice::default();
+        theme::style_choice(&mut gho_disk_choice);
+        gho_disk_group.end();
+        gho_group.fixed(&gho_disk_group, 26);
+
+        let mut gho_part_group = Flex::default().row();
+        gho_part_group.set_color(theme::rgb(theme::CARD));
+        let gp_label = theme::form_label("目标分区");
+        gho_part_group.fixed(&gp_label, 62);
+        let mut gho_part_choice = Choice::default();
+        theme::style_choice(&mut gho_part_choice);
+        gho_part_group.end();
+        gho_group.fixed(&gho_part_group, 26);
+        gho_part_group.hide();
+
+        let mut ghost_row = Flex::default().row();
+        ghost_row.set_color(theme::rgb(theme::CARD));
+        let ghost_label = theme::form_label("Ghost 路径");
+        ghost_row.fixed(&ghost_label, 70);
+        let ghost_default = r"%ProgramFiles(x86)%\ghost\ghost64.exe";
+        let mut ghost_path_in = Input::default();
+        ghost_path_in.set_value(ghost_default);
+        theme::style_input(&mut ghost_path_in);
+        ghost_row.end();
+        gho_group.fixed(&ghost_row, 26);
+        gho_group.end();
+        right.fixed(&gho_group, 140);
 
         // —— 选项（WIM 高 162 = 内边距 20 + 标题 18 + 间距 5 + 4 行组 119）——
         let mut options_group = Flex::default().column();
-        theme::style_card(&mut options_group);
-        let options_title = theme::title("选项");
+        theme::style_section(&mut options_group);
+        let options_title = theme::title("安装选项");
         options_group.fixed(&options_title, 18);
 
-        let wim_options_ui = super::layout::create_wim_options(&config);
-        let wim_options_group = wim_options_ui.wim_options_group;
-        let format_cb = wim_options_ui.format_cb;
-        let repair_boot_cb = wim_options_ui.repair_boot_cb;
-        let restart_cb = wim_options_ui.restart_cb;
-        let defender_cb = wim_options_ui.defender_cb;
-        let firewall_cb = wim_options_ui.firewall_cb;
-        let copy_tools_cb = wim_options_ui.copy_tools_cb;
-        let tools_path_in = wim_options_ui.tools_path_in;
-        let browse_tools_btn = wim_options_ui.browse_tools_btn;
-        let deploy_cb = wim_options_ui.deploy_cb;
-        let admin_user_in = wim_options_ui.admin_user_in;
+        let mut wim_options_group = Flex::default().column();
+        wim_options_group.set_frame(FrameType::NoBox);
+        wim_options_group.set_color(theme::rgb(theme::CARD));
+        wim_options_group.set_margins(0, 0, 0, 0);
+        wim_options_group.set_spacing(5);
+
+        // 行1：格式化 / 修复引导 / 安装完成后重启
+        let mut opt_row1 = Flex::default().row();
+        opt_row1.set_color(theme::rgb(theme::CARD));
+        let mut format_cb = CheckButton::default().with_label("格式化目标分区");
+        theme::style_check(&mut format_cb);
+        opt_row1.fixed(&format_cb, 130);
+        let mut repair_boot_cb = CheckButton::default().with_label("修复引导");
+        repair_boot_cb.set(true);
+        theme::style_check(&mut repair_boot_cb);
+        opt_row1.fixed(&repair_boot_cb, 100);
+        let mut restart_cb = CheckButton::default().with_label("安装完成后重启");
+        restart_cb.set_checked(config.auto_restart);
+        theme::style_check(&mut restart_cb);
+        opt_row1.fixed(&restart_cb, 150);
+        let mut opt_spacer1 = Frame::default();
+        opt_spacer1.set_color(theme::rgb(theme::CARD));
+        opt_row1.fixed(&opt_spacer1, 1);
+        opt_row1.end();
+        wim_options_group.fixed(&opt_row1, 26);
+
+        // 行2：禁用 Defender / 关闭防火墙
+        let mut opt_row2 = Flex::default().row();
+        opt_row2.set_color(theme::rgb(theme::CARD));
+        let mut defender_cb = CheckButton::default().with_label("禁用 Windows Defender");
+        theme::style_check(&mut defender_cb);
+        opt_row2.fixed(&defender_cb, 176);
+        let mut firewall_cb = CheckButton::default().with_label("关闭 Windows 防火墙");
+        theme::style_check(&mut firewall_cb);
+        opt_row2.fixed(&firewall_cb, 168);
+        let mut opt_spacer2 = Frame::default();
+        opt_spacer2.set_color(theme::rgb(theme::CARD));
+        opt_row2.fixed(&opt_spacer2, 1);
+        opt_row2.end();
+        wim_options_group.fixed(&opt_row2, 26);
+
+        // 行3：复制调试工具 + 源目录
+        let mut copy_row = Flex::default().row();
+        copy_row.set_color(theme::rgb(theme::CARD));
+        let mut copy_tools_cb = CheckButton::default().with_label("复制调试工具到桌面");
+        theme::style_check(&mut copy_tools_cb);
+        copy_row.fixed(&copy_tools_cb, 150);
+        let mut tools_path_in = Input::default();
+        tools_path_in.set_value(&config.tools_source_path);
+        theme::style_input(&mut tools_path_in);
+        let browse_tools_btn = theme::secondary_button("浏览...");
+        copy_row.fixed(&browse_tools_btn, 84);
+        copy_row.end();
+        wim_options_group.fixed(&copy_row, 26);
+
+        // 行4：自动部署与系统优化 + 用户名
+        let mut deploy_row = Flex::default().row();
+        deploy_row.set_color(theme::rgb(theme::CARD));
+        let mut deploy_cb = CheckButton::default().with_label("自动部署与系统优化");
+        theme::style_check(&mut deploy_cb);
+        deploy_row.fixed(&deploy_cb, 152);
+        let user_label = theme::form_label("用户名");
+        deploy_row.fixed(&user_label, 52);
+        let mut admin_user_in = Input::default();
+        admin_user_in.set_value("admin");
+        theme::style_input(&mut admin_user_in);
+        deploy_row.fixed(&admin_user_in, 120);
+        let mut opt_spacer3 = Frame::default();
+        opt_spacer3.set_color(theme::rgb(theme::CARD));
+        deploy_row.fixed(&opt_spacer3, 1);
+        deploy_row.end();
+        wim_options_group.fixed(&deploy_row, 26);
+        wim_options_group.end();
 
         // GHO 模式下的选项（与 WIM 选项互斥显示）
         let mut gho_options_group = Flex::default().column();
@@ -310,7 +519,7 @@ impl App {
         options_group.fixed(&gho_options_group, 26);
         let _options_spacer = Frame::default();
         options_group.end();
-        right.fixed(&options_group, 162);
+        right.fixed(&options_group, 168);
 
         // 占位：吸收右侧剩余空间（避免最后一张卡片被拉伸）
         let _right_spacer = Frame::default();
@@ -318,18 +527,43 @@ impl App {
         main.end();
 
         // ===== 页脚：进度条 + 当前方案 + 方案操作 + 开始安装 =====
-        // 高度 62 = 上下内边距 18 + 进度条 8 + 间距 6 + 按钮行 30
-        let footer_ui = super::layout::create_footer();
-        let progress = footer_ui.progress;
-        let _scheme_head = footer_ui.scheme_head;
-        let current_scheme_label = footer_ui.current_scheme_label;
-        let save_scheme_btn = footer_ui.save_scheme_btn;
-        let load_scheme_btn = footer_ui.load_scheme_btn;
-        let install_btn = footer_ui.install_btn;
-        root.fixed(&footer_ui.footer, 62);
+        // 高度 68 = 上下内边距 20 + 进度条 10 + 间距 8 + 按钮行 30
+        let mut footer = Flex::default().column();
+        footer.set_frame(FrameType::FlatBox);
+        footer.set_color(theme::rgb(theme::CARD));
+        footer.set_margins(16, 10, 16, 10);
+        footer.set_spacing(8);
+
+        let mut progress = Progress::default();
+        theme::style_progress(&mut progress);
+        progress.set_minimum(0.0);
+        progress.set_maximum(100.0);
+        progress.set_value(0.0);
+        footer.fixed(&progress, 10);
+
+        let mut foot_row = Flex::default().row();
+        foot_row.set_color(theme::rgb(theme::CARD));
+        let mut scheme_head = Frame::default().with_label("当前方案");
+        scheme_head.set_align(Align::Left | Align::Inside);
+        scheme_head.set_label_size(11);
+        scheme_head.set_label_color(theme::rgb(theme::MUTED));
+        foot_row.fixed(&scheme_head, 62);
+        let mut current_scheme_label = theme::label("无");
+        current_scheme_label.set_label_color(theme::rgb(theme::PRIMARY));
+        let save_scheme_btn = theme::secondary_button("保存当前方案");
+        foot_row.fixed(&save_scheme_btn, 116);
+        let load_scheme_btn = theme::secondary_button("加载方案");
+        foot_row.fixed(&load_scheme_btn, 92);
+        let mut install_btn = theme::primary_button("开始安装");
+        install_btn.deactivate();
+        foot_row.fixed(&install_btn, 140);
+        foot_row.end();
+        footer.fixed(&foot_row, 30);
+        footer.end();
+        root.fixed(&footer, 68);
 
         // ---------- 日志面板（默认隐藏）----------
-        // 高度 140 = 上下内边距 18 + 标题 18 + 间距 4 + 文本区 100
+        // 展开 LOG_H = 168 = 上下内边距 18 + 标题 18 + 间距 4 + 文本区 128
         let mut log_group = Flex::default().column();
         log_group.set_frame(FrameType::FlatBox);
         log_group.set_color(theme::rgb(theme::CARD));
@@ -346,55 +580,58 @@ impl App {
         win.end();
         win.resizable(&root);
 
+        let ui = AppUi {
+            win,
+            root,
+            main_col: main,
+            left_col: left,
+            right_col: right,
+            options_group,
+            restore_cb,
+            countdown_label,
+            current_scheme_label,
+            log_toggle_btn,
+            theme_btn,
+            save_scheme_btn,
+            load_scheme_btn,
+            tree,
+            disk_buttons: Vec::new(),
+            source_path_in,
+            browse_source_btn,
+            image_choice,
+            target_group,
+            disk_choice,
+            partition_preview,
+            gho_group,
+            gho_mode_disk_rb,
+            gho_mode_part_rb,
+            gho_disk_group,
+            gho_disk_choice,
+            gho_part_group,
+            gho_part_choice,
+            ghost_path_in,
+            wim_options_group,
+            format_cb,
+            copy_tools_cb,
+            tools_path_in,
+            browse_tools_btn,
+            deploy_cb,
+            admin_user_in,
+            defender_cb,
+            firewall_cb,
+            repair_boot_cb,
+            restart_cb,
+            gho_options_group,
+            gho_restart_cb,
+            gho_repair_boot_cb,
+            install_btn,
+            progress,
+            log_group,
+            log_panel,
+        };
+
         let mut this = App {
-            ui: AppUi {
-                win,
-                root,
-                main_col: main,
-                left_col: left,
-                right_col: right,
-                options_group,
-                restore_cb,
-                countdown_label,
-                log_toggle_btn,
-                save_scheme_btn,
-                load_scheme_btn,
-                tree,
-                disk_buttons: Vec::new(),
-                source_path_in,
-                browse_source_btn,
-                image_choice,
-                target_group,
-                disk_choice,
-                partition_preview,
-                gho_group,
-                gho_mode_disk_rb,
-                gho_mode_part_rb,
-                gho_disk_group,
-                gho_disk_choice,
-                gho_part_group,
-                gho_part_choice,
-                ghost_path_in,
-                wim_options_group,
-                format_cb,
-                copy_tools_cb,
-                tools_path_in,
-                browse_tools_btn,
-                deploy_cb,
-                admin_user_in,
-                defender_cb,
-                firewall_cb,
-                repair_boot_cb,
-                restart_cb,
-                gho_options_group,
-                gho_restart_cb,
-                gho_repair_boot_cb,
-                install_btn,
-                progress,
-                current_scheme_label,
-                log_group,
-                log_panel,
-            },
+            ui,
             cfg: config,
             disk_data: Vec::new(),
             disk_combo_index: Vec::new(),
@@ -445,7 +682,7 @@ impl App {
         self.ui.win.resize_callback(move |w, _, _, _, _| {
             // 注意：必须在水平方向的 main（row）上设置 fixed，
             // 在左列（column）上调用只会固定子控件高度。
-            main_col.fixed(&left_col, (w.w() - 443).clamp(300, 470));
+            main_col.fixed(&left_col, (w.w() - 449).clamp(320, 520));
             root.layout();
         });
 
@@ -458,6 +695,11 @@ impl App {
                 a.on_toggle_log_visible();
                 bc.set_label(if on { "显示日志" } else { "隐藏日志" });
             });
+        });
+        // 主题切换按钮：点击后循环 Auto → Light → Dark
+        self.ui.theme_btn.set_callback(|b| {
+            let mut bc = b.clone();
+            App::with(move |a| a.on_toggle_theme(&mut bc));
         });
         self.ui.save_scheme_btn.set_callback(|_| App::with(|a| a.save_scheme()));
         self.ui.load_scheme_btn.set_callback(|_| App::with(|a| a.load_scheme("", false)));
@@ -560,10 +802,10 @@ impl App {
     ///   - 已停止 → 红色 `⏸自动还原服务已停止`
     fn set_restore_state(&mut self, running: bool) {
         if running {
-            self.ui.restore_cb.set_label("▶自动还原服务运行中");
+            self.ui.restore_cb.set_label("自动还原 · 运行中");
             self.ui.restore_cb.set_label_color(theme::rgb(theme::SUCCESS));
         } else {
-            self.ui.restore_cb.set_label("⏸自动还原服务已停止");
+            self.ui.restore_cb.set_label("自动还原 · 已停止");
             self.ui.restore_cb.set_label_color(theme::rgb(theme::DANGER));
         }
     }
@@ -576,6 +818,52 @@ impl App {
 
     fn set_countdown_text(&mut self, s: &str) {
         self.ui.countdown_label.set_label(s);
+    }
+
+    /// 主题切换：只在「明亮 / 深色」两档间切换（不做运行中自动检测）。
+    ///
+    /// 启动时可能处于 Auto（跟随系统）的生效主题；此时按**当前实际显示**
+    /// 决定方向：显示深色 → 点一下变明亮，显示浅色 → 点一下变深色，
+    /// 之后就在两档间来回。
+    fn on_toggle_theme(&mut self, btn: &mut Button) {
+        let next = if theme::is_dark() {
+            ThemeMode::Light
+        } else {
+            ThemeMode::Dark
+        };
+        theme::set_mode(next);
+        // 用户手动选择后写入 config.ini，下次启动保持该模式
+        self.cfg.theme_mode = theme::mode_name(next).to_string();
+        let _ = self.cfg.save(None);
+        // 更新按钮标签并刷新整棵控件树
+        btn.set_label(theme::theme_btn_text());
+        self.refresh_theme_ui();
+        log::info!("主题切换为 {}", theme::mode_name(next));
+    }
+
+    /// 刷新所有 UI 控件的主题样式。
+    ///
+    /// 【为什么不能只刷几个句柄】控件底色/文字色在创建时就写死为当时主题值，
+    /// 只重刷 win/root/tree 等顶层几个容器，卡片、按钮、输入框仍会是旧主题色。
+    /// 这里用 `theme::refresh_tree` 从窗口根开始递归，对整棵控件树做
+    /// "旧主题色 → 新主题色"重映射（见 theme.rs 的 ROLE_PAIRS）。
+    pub(crate) fn refresh_theme_ui(&mut self) {
+        // 整棵控件树重刷（含树行内按钮、卡片、按钮、输入框等）
+        theme::refresh_tree(&mut self.ui.win);
+        // 树行内"一键分区"按钮是挂在树节点上的控件，不在 Fl_Group 子控件
+        // 列表里，递归走不到，必须逐个重刷
+        for b in self.ui.disk_buttons.iter_mut() {
+            theme::refresh_tree(b);
+        }
+        // 树选中色与树内节点文字色（FLTK 内部绘制，递归覆盖不到的部分）
+        self.ui.tree.set_selection_color(theme::rgb(theme::SELECTION()));
+        self.ui.tree.set_item_label_fgcolor(theme::rgb(theme::TEXT()));
+        self.ui.tree.set_item_label_bgcolor(theme::rgb(theme::CARD()));
+        // 日志面板（文本显示区走独立的样式表重设）
+        self.ui.log_panel.refresh_theme();
+        // 主题按钮标签永远反映当前生效主题（明亮/深色两档）
+        self.ui.theme_btn.set_label(theme::theme_btn_text());
+        self.ui.win.redraw();
     }
 
     // ==================== 自动刷新 ====================
@@ -691,7 +979,7 @@ impl App {
             if self.is_installing {
                 btn.deactivate();
             }
-            theme::add_hover_effect(&mut btn, theme::PRIMARY_SOFT);
+            theme::add_hover_effect(&mut btn, theme::PRIMARY_SOFT());
             // 物理盘号先复制出来：回调闭包须 'static（嵌套排队），不能借用循环变量
             let phys = info.physical_disk;
             btn.set_callback(move |_| App::with(move |a| a.on_one_click(disk_idx, phys)));
@@ -1084,14 +1372,14 @@ impl App {
             let (ok, mp, error) = iso::mount_iso(&file_path);
             if !ok {
                 log::error!("ISO 挂载失败: {error}");
-                dialog::alert_default(&format!("ISO 挂载失败:\n{error}"));
+                msg::alert(&format!("ISO 挂载失败:\n{error}"));
                 self.set_status("ISO 挂载失败");
                 return;
             }
             let wim_files = iso::find_wim_in_iso(&mp);
             if wim_files.is_empty() {
                 log::error!("ISO 中未找到 install.wim/install.esd: {mp}");
-                dialog::alert_default("在 ISO 中未找到 install.wim 或 install.esd 文件");
+                msg::alert("在 ISO 中未找到 install.wim 或 install.esd 文件");
                 iso::unmount_iso(&mp);
                 self.set_status("未找到安装镜像");
                 return;
@@ -1103,7 +1391,7 @@ impl App {
             log::info!("WIM/ESD 文件直接使用");
         } else {
             log::warn!("不支持的文件类型: {file_path}");
-            dialog::alert_default("不支持的文件类型，请选择 ISO、WIM、ESD 或 GHO 文件");
+            msg::alert("不支持的文件类型，请选择 ISO、WIM、ESD 或 GHO 文件");
             self.set_status("不支持的文件类型");
             return;
         }
@@ -1112,7 +1400,7 @@ impl App {
         let images = crate::app::install::dism::get_wim_info(&wim_path);
         if images.is_empty() {
             log::error!("读取镜像信息失败: {wim_path}");
-            dialog::alert_default("无法读取镜像信息，请确认文件完整性");
+            msg::alert("无法读取镜像信息，请确认文件完整性");
             if let Some(mp) = mount_path {
                 iso::unmount_iso(&mp);
             }
@@ -1208,14 +1496,14 @@ impl App {
         self.is_gho_mode = is_gho;
         // 分组高度（与构造时 fixed 值一致），0 表示折叠隐藏。
         // 数值与 `new()` 中的卡片高度保持一致，否则切换模式后卡片会被压扁。
-        const TARGET_H: i32 = 98;
-        const GHO_H: i32 = 132;
+        const TARGET_H: i32 = 104;
+        const GHO_H: i32 = 140;
         const WIM_OPT_H: i32 = 119;
         const GHO_OPT_H: i32 = 26;
-        // 「选项」外框：WIM = 内边距20 + 标题18 + 间距5 + 119 = 162；
-        // GHO 只剩一行选项：20 + 18 + 5 + 26 = 69，留 3px 余量取 72。
-        const OPTIONS_H: i32 = 162;
-        const GHO_OPTIONS_H: i32 = 72;
+        // 「选项」外框：WIM = 内边距20 + 标题18 + 间距5 + 119 = 162，留 6px 余量取 168；
+        // GHO 只剩一行选项：20 + 18 + 5 + 26 = 69，留 9px 余量取 78。
+        const OPTIONS_H: i32 = 168;
+        const GHO_OPTIONS_H: i32 = 78;
         if is_gho {
             self.ui.image_choice.hide();
             self.ui.target_group.hide();
@@ -1382,12 +1670,14 @@ impl App {
     /// - 下方空间不够时，再从主体（磁盘树）的富余高度里借用；
     /// - 两者都不够时才临时压缩主体，保证窗口本身永远不超出屏幕。
     fn on_toggle_log_visible(&mut self) {
-        const LOG_H: i32 = 140;
-        const HEADER_H: i32 = 74;
-        const FOOTER_H: i32 = 62;
-        // 右侧卡片列的最小高度（含主体上下 margin 14×2）：
-        // WIM = 100+98+162+间距20+margin28，GHO = 100+132+72+间距20+margin28。
-        let min_main = if self.is_gho_mode { 352 } else { 408 };
+        const LOG_H: i32 = 168;
+        // 主体上方：root 边距 8 + 页头 52 + 间距 8 = 68
+        const HEADER_H: i32 = 68;
+        // 主体下方：间距 8 + 页脚 68 + root 边距 8 = 84
+        const FOOTER_H: i32 = 84;
+        // 右侧分组列的最小高度（含主体上下 margin 12×2 与列内间距 6×2）：
+        // WIM = 106+104+168+间距18+margin24，GHO = 106+140+78+间距18+margin24。
+        let min_main = if self.is_gho_mode { 366 } else { 420 };
 
         if self.ui.log_panel.is_visible() {
             self.ui.log_group.hide();
@@ -1434,15 +1724,15 @@ impl App {
     fn on_toggle_restore(&mut self) {
         let enabled = self.ui.restore_cb.is_checked();
         self.cfg.restore_enabled = enabled;
-        self.cfg.save(None);
+        let _ = self.cfg.save(None);
         if enabled {
             let image_path = self.ui.source_path_in.value();
             if image_path.is_empty() {
                 log::warn!("开启自动还原失败: 未选择镜像文件");
-                dialog::alert_default("请先选择镜像文件再开启自动还原");
+                msg::alert("请先选择镜像文件再开启自动还原");
                 self.ui.restore_cb.set_checked(false);
                 self.cfg.restore_enabled = false;
-                self.cfg.save(None);
+                let _ = self.cfg.save(None);
                 self.cancel_countdown();
                 self.set_restore_state(false);
                 return;
@@ -1463,35 +1753,35 @@ impl App {
         let enabled = self.ui.restart_cb.is_checked() || self.ui.gho_restart_cb.is_checked();
         log::info!("安装完成后重启: {}", if enabled { "开启" } else { "关闭" });
         self.cfg.auto_restart = enabled;
-        self.cfg.save(None);
+        let _ = self.cfg.save(None);
     }
 
     fn on_toggle_copy_tools(&mut self) {
         let enabled = self.ui.copy_tools_cb.is_checked();
         log::info!("复制调试工具: {}", if enabled { "开启" } else { "关闭" });
         self.cfg.copy_tools = enabled;
-        self.cfg.save(None);
+        let _ = self.cfg.save(None);
     }
 
     fn on_toggle_deploy_unattend(&mut self) {
         let enabled = self.ui.deploy_cb.is_checked();
         log::info!("自动部署与系统优化: {}", if enabled { "开启" } else { "关闭" });
         self.cfg.deploy_unattend = enabled;
-        self.cfg.save(None);
+        let _ = self.cfg.save(None);
     }
 
     fn on_toggle_disable_defender(&mut self) {
         let enabled = self.ui.defender_cb.is_checked();
         log::info!("禁用Windows Defender: {}", if enabled { "开启" } else { "关闭" });
         self.cfg.disable_defender = enabled;
-        self.cfg.save(None);
+        let _ = self.cfg.save(None);
     }
 
     fn on_toggle_disable_firewall(&mut self) {
         let enabled = self.ui.firewall_cb.is_checked();
         log::info!("关闭Windows防火墙: {}", if enabled { "开启" } else { "关闭" });
         self.cfg.disable_firewall = enabled;
-        self.cfg.save(None);
+        let _ = self.cfg.save(None);
     }
 
     fn on_browse_tools_source(&mut self) {
@@ -1506,12 +1796,12 @@ impl App {
         log::info!("选择调试工具源目录: {path}");
         self.ui.tools_path_in.set_value(&path);
         self.cfg.tools_source_path = path;
-        self.cfg.save(None);
+        let _ = self.cfg.save(None);
     }
 
     fn on_tools_source_path_changed(&mut self, path: &str) {
         self.cfg.tools_source_path = path.trim().to_string();
-        self.cfg.save(None);
+        let _ = self.cfg.save(None);
     }
 
     // ==================== 安装主流程（§8.3）====================
@@ -1523,7 +1813,7 @@ impl App {
         }
         if self.current_wim_path.is_none() {
             log::warn!("安装中止: 未选择安装源");
-            dialog::alert_default("请选择安装源");
+            msg::alert("请先选择安装源");
             return;
         }
         if self.is_gho_mode {
@@ -1533,7 +1823,7 @@ impl App {
         }
         if self.ui.image_choice.choice().unwrap_or_default().is_empty() {
             log::warn!("安装中止: 未选择镜像索引");
-            dialog::alert_default("请选择要安装的镜像");
+            msg::alert("请先选择要安装的镜像");
             return;
         }
         let has_pending = !self.pending.is_empty();
@@ -1542,7 +1832,7 @@ impl App {
         if !has_pending {
             if self.selected_disk_idx().is_empty() {
                 log::warn!("安装中止: 未选择安装硬盘");
-                dialog::alert_default("请选择安装硬盘");
+                msg::alert("请先选择安装硬盘");
                 return;
             }
             let (boot_key, win_key) = self.boot_windows_keys();
@@ -1550,7 +1840,7 @@ impl App {
             windows_letter = self.get_letter_by_part_key(&win_key);
             if windows_letter.is_empty() {
                 log::warn!("安装中止: 系统分区 {win_key} 无盘符");
-                dialog::alert_default(&format!("系统分区 {win_key} 没有盘符，无法安装系统"));
+                msg::alert(&format!("系统分区 {win_key} 没有盘符，无法安装系统"));
                 return;
             }
             if boot_letter.is_empty() {
@@ -1558,7 +1848,7 @@ impl App {
                 boot_letter = self.try_assign_esp_drive_letter(&boot_key);
                 if boot_letter.is_empty() {
                     log::warn!("安装中止: 引导分区 {boot_key} 无盘符且自动分配失败");
-                    dialog::alert_default(&format!(
+                    msg::alert(&format!(
                         "引导分区 {boot_key} 没有盘符，且无法自动分配，无法写入引导"
                     ));
                     return;
@@ -1590,14 +1880,13 @@ impl App {
             log::info!("自动还原: 跳过安装确认对话框");
         } else {
             let confirm_msg = format!(
-                "镜像: {}\n镜像索引: {image_index}\n格式化目标分区: {}\n自动修复引导: {}\n关闭Windows防火墙: {}\n\n警告：此操作将覆盖目标分区的所有数据！\n确定要继续吗？",
+                "即将安装系统\n\n镜像: {}\n镜像索引: {image_index}\n格式化目标分区: {}\n自动修复引导: {}\n关闭 Windows 防火墙: {}\n\n警告：继续操作将清空目标分区的全部数据！\n\n确定要继续吗？",
                 self.current_wim_path.clone().unwrap_or_default(),
                 if format_windows { "是" } else { "否" },
                 if auto_repair_boot { "是" } else { "否" },
                 if self.ui.firewall_cb.is_checked() { "是" } else { "否" },
             );
-            let choice = dialog::choice2_default(&confirm_msg, "确定", "取消", "");
-            if choice != Some(0) {
+            if !msg::confirm(&confirm_msg) {
                 log::info!("用户取消安装确认");
                 return;
             }
@@ -1753,13 +2042,7 @@ impl App {
     }
 
     fn on_stop_install(&mut self) {
-        let choice = dialog::choice2_default(
-            "确定要停止安装吗？\n停止后已安装的内容需要手动清理。",
-            "确定",
-            "取消",
-            "",
-        );
-        if choice != Some(0) {
+        if !msg::confirm("确定要停止安装吗？\n停止后已安装的内容需要手动清理。") {
             return;
         }
         log::warn!("用户请求停止安装");
@@ -1785,11 +2068,11 @@ impl App {
         let (logical_disk, ghost_disk_index, ghost_partition_index) = if restore_mode == "disk" {
             let target_text = self.ui.gho_disk_choice.choice().unwrap_or_default();
             if target_text.is_empty() {
-                dialog::alert_default("请选择目标硬盘");
+                msg::alert("请先选择目标硬盘");
                 return;
             }
             let Some(m) = parse_leading_disk(&target_text) else {
-                dialog::alert_default("无法解析目标硬盘");
+                msg::alert("无法解析目标硬盘");
                 return;
             };
             let phys = self.resolve_ghost_disk(m);
@@ -1797,14 +2080,14 @@ impl App {
         } else {
             let target_text = self.ui.gho_part_choice.choice().unwrap_or_default();
             if target_text.is_empty() {
-                dialog::alert_default("请选择目标分区");
+                msg::alert("请先选择目标分区");
                 return;
             }
             if target_text.contains("(预览)") {
                 // 一键分区预览条目：盘尚未实际分区，前缀"盘号:计划分区号"里的
                 // 计划号直接作为 Ghost 目标分区号，不能按实际分区表换算。
                 let Some((ld, planned)) = parse_leading_disk_part(&target_text) else {
-                    dialog::alert_default("无法解析目标分区");
+                    msg::alert("无法解析目标分区");
                     return;
                 };
                 let phys = self.resolve_ghost_disk(ld);
@@ -1817,7 +2100,7 @@ impl App {
                 (ld, phys, planned)
             } else {
                 let Some((ld, lp)) = parse_leading_disk_part(&target_text) else {
-                    dialog::alert_default("无法解析目标分区");
+                    msg::alert("无法解析目标分区");
                     return;
                 };
                 match self.resolve_ghost_part(ld, lp) {
@@ -1825,7 +2108,7 @@ impl App {
                     None => {
                         // 目标分区已失效（被清理/重建）：Ghost 的分区号从 1 起，
                         // 退回 0 会变成 dst=N:0 → ABORT 10099。提示用户重选。
-                        dialog::alert_default(
+                        msg::alert(
                             "目标分区已变更，请在下拉框中重新选择后重试",
                         );
                         return;
@@ -1844,18 +2127,15 @@ impl App {
             "分区还原"
         };
         let confirm_msg = format!(
-            "GHO 镜像还原\n\n镜像: {gho_path}\n模式: {mode_text}\nGhost: {ghost_exe}\n还原后自动重启: {}\n\n警告：此操作将覆盖目标分区的所有数据！\n确定要继续吗？",
+            "即将执行 GHO 镜像还原\n\n镜像: {gho_path}\n模式: {mode_text}\nGhost: {ghost_exe}\n还原后自动重启: {}\n\n警告：继续操作将清空目标分区的全部数据！\n\n确定要继续吗？",
             if auto_restart { "是" } else { "否" }
         );
         // 自动还原链路（on_install_system(skip_confirm=true) 分发过来）不弹确认框
         if skip_confirm {
             log::info!("自动还原: 跳过 GHO 还原确认对话框");
-        } else {
-            let choice = dialog::choice2_default(&confirm_msg, "确定", "取消", "");
-            if choice != Some(0) {
-                log::info!("用户取消 GHO 还原确认");
-                return;
-            }
+        } else if !msg::confirm(&confirm_msg) {
+            log::info!("用户取消 GHO 还原确认");
+            return;
         }
         log::info!(
             "开始 GHO 还原: 镜像={gho_path}, 模式={restore_mode}, ghost_disk_index={ghost_disk_index}"
@@ -2065,7 +2345,7 @@ impl App {
             self.set_status("安装已取消");
             self.ui.progress.set_value(0.0);
             log::warn!("安装已被用户取消");
-            dialog::message_default("安装已被取消");
+            msg::info("安装已被取消");
             self.finish_install();
             return;
         }
@@ -2079,7 +2359,7 @@ impl App {
         } else {
             self.set_status("系统安装失败");
             let shown: String = output.chars().take(500).collect();
-            dialog::alert_default(&format!("系统安装失败:\n{shown}"));
+            msg::alert(&format!("系统安装失败:\n{shown}"));
             log::error!("系统安装失败: {output}");
             self.finish_install();
         }
@@ -2154,8 +2434,7 @@ impl App {
             restart::show(&mut self.ui.win, self.cfg.restart_countdown_sec);
         } else {
             let restart_msg = format!("{msg}\n\n是否立即重启电脑？");
-            let choice = dialog::choice2_default(&restart_msg, "是", "否", "");
-            if choice == Some(0) {
+            if msg::ask(&restart_msg) {
                 log::info!("用户选择立即重启");
                 let _ = std::process::Command::new("shutdown")
                     .args(["/r", "/t", "0"])
@@ -2264,7 +2543,7 @@ impl App {
             return;
         }
         let s = self.countdown_remaining;
-        self.set_countdown_text(&format!("⏱{s}s后自动还原"));
+        self.set_countdown_text(&format!("{s} 秒后自动还原"));
         self.countdown_remaining -= 1;
         self.countdown_id = Some(app::add_timeout3(1.0, |_| {
             App::with(|a| a.update_countdown())
@@ -2418,11 +2697,11 @@ impl App {
         let bat_content = build_combined_bat(&data);
         if let Err(e) = std::fs::write(&path, bat_content) {
             log::error!("保存方案失败: {e}");
-            dialog::alert_default(&format!("保存方案失败:\n{e}"));
+            msg::alert(&format!("保存方案失败:\n{e}"));
             return;
         }
         self.cfg.plan_path = path.clone();
-        self.cfg.save(None);
+        let _ = self.cfg.save(None);
         let stem = Path::new(&path)
             .file_stem()
             .map(|s| s.to_string_lossy().into_owned())
@@ -2438,7 +2717,7 @@ impl App {
                 .unwrap_or_default()
         ));
         log::info!("方案已保存: {path}");
-        dialog::message_default(&format!("方案已保存:\n{path}"));
+        msg::info(&format!("方案已保存:\n{path}"));
     }
 
     fn load_scheme(&mut self, from_path: &str, silent: bool) {
@@ -2461,7 +2740,7 @@ impl App {
             Err(e) => {
                 log::error!("加载方案失败: {e}");
                 if !silent {
-                    dialog::alert_default(&format!("读取方案失败:\n{e}"));
+                    msg::alert(&format!("读取方案失败:\n{e}"));
                 }
                 return;
             }
@@ -2469,13 +2748,13 @@ impl App {
         let Some(data) = parse_plan_metadata(&bat_text) else {
             log::error!("加载方案失败: 未找到方案元数据块");
             if !silent {
-                dialog::alert_default("读取方案失败:\n未找到方案元数据块");
+                msg::alert("读取方案失败:\n未找到方案元数据块");
             }
             return;
         };
         self.apply_scheme(&data);
         self.cfg.plan_path = path.clone();
-        self.cfg.save(None);
+        let _ = self.cfg.save(None);
         let stem = Path::new(&path)
             .file_stem()
             .map(|s| s.to_string_lossy().into_owned())
@@ -2492,7 +2771,7 @@ impl App {
         ));
         log::info!("方案已加载: {path}");
         if !silent {
-            dialog::message_default(&format!("方案已加载:\n{path}"));
+            msg::info(&format!("方案已加载:\n{path}"));
         }
     }
 
@@ -2582,7 +2861,7 @@ impl App {
         self.cfg.disable_defender = inst.disable_defender;
         self.cfg.disable_firewall = inst.disable_firewall;
         self.cfg.auto_restart = inst.restart_after_install;
-        self.cfg.save(None);
+        let _ = self.cfg.save(None);
         if !self.is_gho_mode && !inst.target_disk.is_empty() {
             self.select_disk_in_combo(inst.target_disk.parse().unwrap_or(0));
         }

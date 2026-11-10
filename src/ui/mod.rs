@@ -11,12 +11,13 @@
 
 mod app;
 mod ghost;
-mod layout;
 mod log_panel;
+mod msg;
 mod one_click;
 mod restart;
 mod state;
-mod theme;
+pub mod theme;
+pub mod theme_mode;
 
 use std::cell::RefCell;
 use std::collections::VecDeque;
@@ -149,13 +150,14 @@ pub fn select_choice_exact(c: &mut Choice, text: &str) -> bool {
 
 /// 计算弹出对话框的尺寸与位置（低分辨率适配）。
 ///
-/// - 优先以**父窗口中心**为基准居中（父窗口未显示时退回屏幕中心）；
+/// - 【位置恒为居中】以**屏幕可用区域**（整屏扣除任务栏约 40px）为中心，
+///   不再跟随父窗口位置，也绝不记忆/复用上一次坐标；
 /// - 设计尺寸超出屏幕可用区域时自动收缩，但不小于 `min_*`；
-/// - 最终坐标再夹紧到屏幕内，避免标题栏/任务栏跑到屏幕外。
+/// - 坐标再夹紧到屏幕内，避免标题栏/任务栏跑到屏幕外。
 ///
 /// 返回 `(x, y, w, h)`，供 `DoubleWindow::new` 直接使用。
 pub fn dialog_geometry(
-    parent: &DoubleWindow,
+    _parent: &DoubleWindow,
     desired_w: i32,
     desired_h: i32,
     min_w: i32,
@@ -170,13 +172,8 @@ pub fn dialog_geometry(
     let w = desired_w.min(avail_w).max(min_w.min(avail_w));
     let h = desired_h.min(avail_h).max(min_h.min(avail_h));
 
-    let (px, py, pw, ph) = if parent.shown() {
-        (parent.x(), parent.y(), parent.w(), parent.h())
-    } else {
-        (0, 0, sw, sh)
-    };
-    let x = (px + (pw - w) / 2).clamp(0, (sw - w - 8).max(0));
-    let y = (py + (ph - h) / 2).clamp(0, (sh - h - 40).max(0));
+    let x = ((sw - w) / 2).clamp(0, (avail_w - w).max(0));
+    let y = ((sh - 40 - h) / 2).clamp(0, (avail_h - h).max(0));
     (x, y, w, h)
 }
 
@@ -187,6 +184,10 @@ pub fn run(config: crate::config::settings::AppConfig) -> Result<(), Box<dyn Err
 
     let start = App::new(config);
     start.register_global();
+
+    // 【主题只在启动时自动选择】按用户要求不再常驻检测系统主题变化：
+    // 启动时按系统深浅色定一次（App::new → theme::init / Auto → 检测），
+    // 之后由用户手动在「明亮/深色」间切换，运行中不再自动跟改。
 
     // 消息泵：非阻塞轮询 channel，再排空日志面板队列；顺带检测树宽变化
     // （窗口缩放后硬盘行内按钮重新右对齐）。
@@ -203,5 +204,6 @@ pub fn run(config: crate::config::settings::AppConfig) -> Result<(), Box<dyn Err
     let flapp = fapp::App::default();
     while flapp.wait() {}
 
+    // 清理主题检查定时器
     Ok(())
 }

@@ -60,32 +60,32 @@ impl LogPanel {
         display.set_buffer(text_buf.clone());
         display.set_text_font(Font::Courier);
         display.set_text_size(12);
-        display.set_text_color(theme::rgb(theme::TEXT));
-        display.set_color(theme::rgb(theme::INPUT_BG));
+        display.set_text_color(theme::rgb(theme::TEXT()));
+        display.set_color(theme::rgb(theme::INPUT_BG()));
 
         let styles = vec![
             StyleTableEntry {
-                color: theme::rgb(theme::TEXT), // info
+                color: theme::rgb(theme::TEXT()),
                 font: Font::Courier,
                 size: 12,
             },
             StyleTableEntry {
-                color: theme::rgb(theme::PRIMARY), // debug
+                color: theme::rgb(theme::PRIMARY()),
                 font: Font::Courier,
                 size: 12,
             },
             StyleTableEntry {
-                color: theme::rgb(theme::WARN), // warning
+                color: theme::rgb(theme::WARN()),
                 font: Font::Courier,
                 size: 12,
             },
             StyleTableEntry {
-                color: theme::rgb(theme::DANGER), // error
+                color: theme::rgb(theme::DANGER()),
                 font: Font::Courier,
                 size: 12,
             },
             StyleTableEntry {
-                color: theme::rgb(theme::DANGER), // critical（粗体近似）
+                color: theme::rgb(theme::DANGER()),
                 font: Font::CourierBold,
                 size: 12,
             },
@@ -144,6 +144,41 @@ impl LogPanel {
     pub fn scroll_to_bottom(&mut self) {
         let n = self.text_buf.count_lines(0, self.text_buf.length());
         self.display.scroll(n, 0);
+        self.display.redraw();
+    }
+
+    /// 主题切换后刷新日志面板的背景色与样式表颜色。
+    pub fn refresh_theme(&mut self) {
+        self.display.set_color(theme::rgb(theme::INPUT_BG()));
+        self.display.set_text_color(theme::rgb(theme::TEXT()));
+        let styles = vec![
+            StyleTableEntry {
+                color: theme::rgb(theme::TEXT()),
+                font: Font::Courier,
+                size: 12,
+            },
+            StyleTableEntry {
+                color: theme::rgb(theme::PRIMARY()),
+                font: Font::Courier,
+                size: 12,
+            },
+            StyleTableEntry {
+                color: theme::rgb(theme::WARN()),
+                font: Font::Courier,
+                size: 12,
+            },
+            StyleTableEntry {
+                color: theme::rgb(theme::DANGER()),
+                font: Font::Courier,
+                size: 12,
+            },
+            StyleTableEntry {
+                color: theme::rgb(theme::DANGER()),
+                font: Font::CourierBold,
+                size: 12,
+            },
+        ];
+        self.display.set_highlight_data(self.style_buf.clone(), styles);
         self.display.redraw();
     }
 }

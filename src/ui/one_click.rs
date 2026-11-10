@@ -15,7 +15,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use fltk::button::CheckButton;
-use fltk::enums::{Align, Color, Font, FrameType};
+use fltk::enums::{Align, Color, Event, Font, FrameType};
 use fltk::frame::Frame;
 use fltk::group::{Flex, Group};
 use fltk::input::Input;
@@ -27,7 +27,7 @@ use fltk::window::DoubleWindow;
 use crate::app::scheme::bat::DataPart;
 
 use super::state::PartitionDialogResult;
-use super::{app_icon, theme};
+use super::{app_icon, msg, theme};
 
 /// 对话框输入数据（← `disk_info` 字典）
 pub struct DialogData {
@@ -58,6 +58,53 @@ const RED: (u8, u8, u8) = (0xff, 0x00, 0x00);
 
 fn rgb(r: u8, g: u8, b: u8) -> Color {
     Color::from_rgba_tuple((r, g, b, 255))
+}
+
+/// 分段条选项的视觉状态：
+/// 选中 → 主色实底 + 白字；未选中 → 浅底 + 文字色。悬停时再亮一档。
+fn apply_segment_visual(btn: &mut fltk::button::ToggleButton, hover: bool) {
+    let active = btn.value();
+    if active {
+        // Fl_Button 选中态绘制用的是 selection_color()
+        btn.set_color(theme::rgb(theme::INPUT_BG()));
+        btn.set_selection_color(theme::rgb(if hover {
+            theme::PRIMARY_HOVER()
+        } else {
+            theme::PRIMARY()
+        }));
+        btn.set_label_color(Color::White);
+    } else {
+        btn.set_color(theme::rgb(if hover {
+            theme::HOVER_SOFT()
+        } else {
+            theme::INPUT_BG()
+        }));
+        btn.set_label_color(theme::rgb(theme::TEXT()));
+    }
+}
+
+/// 分段按钮统一样式 + 悬停/选中联动（替代通用 add_hover_effect：
+/// 通用悬停会把"选中的主色底"在 Leave 时刷回未选中底色）。
+fn style_segment_button(btn: &mut fltk::button::ToggleButton) {
+    btn.set_frame(FrameType::RFlatBox);
+    btn.set_down_frame(FrameType::RFlatBox);
+    btn.set_label_font(Font::HelveticaBold);
+    btn.set_label_size(12);
+    btn.set_align(Align::Center | Align::Inside);
+    apply_segment_visual(btn, false);
+    btn.handle(|b, ev| match ev {
+        Event::Enter => {
+            apply_segment_visual(b, true);
+            b.redraw();
+            true
+        }
+        Event::Leave => {
+            apply_segment_visual(b, false);
+            b.redraw();
+            true
+        }
+        _ => false,
+    });
 }
 
 /// MB → 显示文本（≥1024MB 用 GB 2 位小数，否则 MB）。
@@ -133,14 +180,15 @@ pub fn show(parent: &mut DoubleWindow, data: DialogData) -> Option<PartitionDial
     win.size_range(dw.min(520), dh.min(548), 0, 0);
     win.set_color(theme::rgb(theme::BG));
     win.set_icon(Some(app_icon()));
+    win.draw(|w| theme::draw_bg_gradient(w));
     win.begin();
 
     // 顶层 Flex 必须铺满窗口客户区，否则整棵控件树都是 0x0（什么都不显示）。
     // `size_of_parent()` 立即按窗口尺寸设置一次；`win.resizable(&root)`（见下方）
     // 让窗口缩放时同步调整——与主窗口 `App` 的做法保持一致。
     let mut root = Flex::default().column().size_of_parent();
-    root.set_margin(12);
-    root.set_spacing(8);
+    root.set_margin(16);
+    root.set_spacing(10);
     root.set_color(theme::rgb(theme::BG));
 
     // ---- 页头：磁盘信息条（标题 + 型号/容量）----
@@ -181,7 +229,7 @@ pub fn show(parent: &mut DoubleWindow, data: DialogData) -> Option<PartitionDial
     boot_card.fixed(&boot_head, 20);
 
     let mut style_row = Flex::default().row();
-    style_row.set_color(theme::rgb(theme::BG));
+    style_row.set_color(theme::rgb(theme::BG()));
     style_row.set_spacing(8);
     let style_lbl = theme::form_label("分区表格式");
     style_row.fixed(&style_lbl, 80);
@@ -193,27 +241,11 @@ pub fn show(parent: &mut DoubleWindow, data: DialogData) -> Option<PartitionDial
     let mut style_gpt = fltk::button::ToggleButton::default().with_label("GPT (UEFI)");
     style_gpt.set_type(fltk::button::ButtonType::Radio);
     style_gpt.set(true); // 默认选中 GPT
-    style_gpt.set_frame(FrameType::RFlatBox);
-    style_gpt.set_down_frame(FrameType::RFlatBox);
-    style_gpt.set_color(theme::rgb(theme::INPUT_BG));
-    style_gpt.set_selection_color(theme::rgb(theme::PRIMARY));
-    style_gpt.set_label_color(theme::rgb(theme::TEXT));
-    style_gpt.set_label_font(Font::HelveticaBold);
-    style_gpt.set_label_size(12);
-    style_gpt.set_align(Align::Center | Align::Inside);
-    theme::add_hover_effect(&mut style_gpt, theme::PRIMARY_SOFT);
+    style_segment_button(&mut style_gpt);
     style_seg.fixed(&style_gpt, 110);
     let mut style_mbr = fltk::button::ToggleButton::default().with_label("MBR (BIOS)");
     style_mbr.set_type(fltk::button::ButtonType::Radio);
-    style_mbr.set_frame(FrameType::RFlatBox);
-    style_mbr.set_down_frame(FrameType::RFlatBox);
-    style_mbr.set_color(theme::rgb(theme::INPUT_BG));
-    style_mbr.set_selection_color(theme::rgb(theme::PRIMARY));
-    style_mbr.set_label_color(theme::rgb(theme::TEXT));
-    style_mbr.set_label_font(Font::HelveticaBold);
-    style_mbr.set_label_size(12);
-    style_mbr.set_align(Align::Center | Align::Inside);
-    theme::add_hover_effect(&mut style_mbr, theme::PRIMARY_SOFT);
+    style_segment_button(&mut style_mbr);
     style_seg.fixed(&style_mbr, 110);
     style_seg.end();
     // 【分段条宽度修复】此前 style_seg 不固定宽度，会在 style_row 里被拉伸
@@ -224,7 +256,7 @@ pub fn show(parent: &mut DoubleWindow, data: DialogData) -> Option<PartitionDial
     boot_card.fixed(&style_row, 30);
 
     let mut esp_row = Flex::default().row();
-    esp_row.set_color(theme::rgb(theme::BG));
+    esp_row.set_color(theme::rgb(theme::BG()));
     esp_row.set_spacing(8);
     let mut esp_cb = CheckButton::default().with_label("EFI分区 (ESP)");
     esp_cb.set_checked(true); // 默认勾选（← Python `_set_gpt_default_esp`）
@@ -243,7 +275,7 @@ pub fn show(parent: &mut DoubleWindow, data: DialogData) -> Option<PartitionDial
     esp_row.fixed(&esp_unit, 60);
     let mut esp_info = Frame::default().with_label("FAT32 (系统分区)");
     esp_info.set_align(Align::Left | Align::Inside);
-    esp_info.set_label_color(theme::rgb(theme::MUTED));
+    esp_info.set_label_color(theme::rgb(theme::MUTED()));
     esp_info.set_label_size(11);
     esp_row.end();
     boot_card.fixed(&esp_row, 26);
@@ -259,7 +291,7 @@ pub fn show(parent: &mut DoubleWindow, data: DialogData) -> Option<PartitionDial
     data_card.fixed(&data_head, 20);
 
     let mut count_row = Flex::default().row();
-    count_row.set_color(theme::rgb(theme::BG));
+    count_row.set_color(theme::rgb(theme::BG()));
     count_row.set_spacing(8);
     let count_lbl = theme::form_label("分区数量");
     count_row.fixed(&count_lbl, 80);
@@ -276,7 +308,7 @@ pub fn show(parent: &mut DoubleWindow, data: DialogData) -> Option<PartitionDial
     // 浅底列表容器 + 白色行 = 清晰的"分区行列表"观感。
     let mut parts_group = Flex::default().column();
     parts_group.set_frame(FrameType::RFlatBox);
-    parts_group.set_color(theme::rgb(theme::INPUT_BG));
+    parts_group.set_color(theme::rgb(theme::INPUT_BG()));
     parts_group.set_margin(4);
     parts_group.set_spacing(0);
     parts_group.begin();
@@ -536,7 +568,12 @@ pub fn show(parent: &mut DoubleWindow, data: DialogData) -> Option<PartitionDial
         let mut esp_cb2 = esp_cb.clone();
         let mut esp_in2 = esp_size_in.clone();
         let mut esp_u2 = esp_unit.clone();
+        let mut gpt_v = style_gpt.clone();
+        let mut mbr_v = style_mbr.clone();
         let apply: Box<dyn FnMut(bool)> = Box::new(move |is_gpt: bool| {
+            // 同步两段的选中视觉（radio 互斥时 FLTK 不会触发另一端的回调）
+            apply_segment_visual(&mut gpt_v, false);
+            apply_segment_visual(&mut mbr_v, false);
             if !is_gpt {
                 esp_cb2.set_checked(false);
                 esp_cb2.deactivate();
@@ -616,7 +653,7 @@ pub fn show(parent: &mut DoubleWindow, data: DialogData) -> Option<PartitionDial
                 match parse_size(&esp_in.value(), &esp_u.choice().unwrap_or_default()) {
                     Some(v) if v > 0 => esp_mb = v,
                     _ => {
-                        fltk::dialog::alert_default("ESP大小无效，请重新输入");
+                        msg::alert("ESP大小无效，请重新输入");
                         return;
                     }
                 }
@@ -630,7 +667,7 @@ pub fn show(parent: &mut DoubleWindow, data: DialogData) -> Option<PartitionDial
             // 逐行校验
             for (i, c) in calcs.iter().enumerate() {
                 if c.invalid {
-                    fltk::dialog::alert_default(&format!("分区{}的大小无效，请重新输入", i + 1));
+                    msg::alert(&format!("分区{}的大小无效，请重新输入", i + 1));
                     return;
                 }
             }
@@ -655,12 +692,12 @@ pub fn show(parent: &mut DoubleWindow, data: DialogData) -> Option<PartitionDial
             let mut final_sizes: Vec<Option<i64>> = vec![None; n];
             for i in 0..n {
                 if calcs[i].invalid {
-                    fltk::dialog::alert_default(&format!("分区{}的大小无效，请重新输入", i + 1));
+                    msg::alert(&format!("分区{}的大小无效，请重新输入", i + 1));
                     return;
                 }
                 if calcs[i].is_auto {
                     if remain < 0 || auto_sizes[i] <= 0 {
-                        fltk::dialog::alert_default(&format!(
+                        msg::alert(&format!(
                             "分区{}的空间不足，请调整分区大小后重试",
                             i + 1
                         ));
@@ -671,7 +708,7 @@ pub fn show(parent: &mut DoubleWindow, data: DialogData) -> Option<PartitionDial
                     match calcs[i].size_mb {
                         Some(mb) if mb > 0 => final_sizes[i] = Some(mb),
                         _ => {
-                            fltk::dialog::alert_default(&format!(
+                            msg::alert(&format!(
                                 "分区{}的大小不能为空",
                                 i + 1
                             ));
@@ -687,7 +724,7 @@ pub fn show(parent: &mut DoubleWindow, data: DialogData) -> Option<PartitionDial
                 total_used += *s;
             }
             if total.get() - total_used < 0 {
-                fltk::dialog::alert_default(&format!(
+                msg::alert(&format!(
                     "分区总大小 ({total_used}MB) 超出磁盘容量 ({}MB)\n超出 {}MB，请调整分区大小后重试",
                     total.get(),
                     total_used - total.get()
