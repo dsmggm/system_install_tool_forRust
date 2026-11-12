@@ -6,9 +6,6 @@
 //! 而文件浏览框之外的提示框样式与新版主题也不一致，因此实现一套模态
 //! 消息窗：以屏幕可用区为中心弹出、按钮/配色与主题统一。
 //!
-//! 【现代化效果】所有弹窗均使用 draw 回调绘制顶部标题栏渐变，
-//! 让标题文字与窗口背景融合为一体，实现"标题栏融合"效果。
-//!
 //! 提供：
 //! - `alert(text)` 提示（确定）— 替代 `dialog::alert_default`
 //! - `info(text)`  信息（确定）— 替代 `dialog::message_default`
@@ -115,9 +112,8 @@ fn show_modal(title: &str, text: &str, btn0: &str, btn1: Option<&str>) -> i32 {
     let x = ((sw - w) / 2).max(0);
     let y = ((sh - h) / 2).max(0);
     let mut win = DoubleWindow::new(x, y, w, h, title);
-    win.set_color(theme::rgb(theme::BG()));
+    win.set_color(theme::rgb(theme::BG_TOP()));
     win.set_icon(Some(app_icon()));
-    win.draw(|w| theme::draw_bg_gradient(w));
     win.begin();
 
     let mut root = Flex::default().column().size_of_parent();
@@ -166,6 +162,8 @@ fn show_modal(title: &str, text: &str, btn0: &str, btn1: Option<&str>) -> i32 {
 
     root.end();
     win.end();
+    // 渐变背景 + 标题栏融合（与主窗口一致）
+    theme::apply_window_backdrop(&mut win);
 
     // Esc 关闭 → 不改 result（保持 -1，按"取消/否"处理）。
     {
@@ -181,6 +179,8 @@ fn show_modal(title: &str, text: &str, btn0: &str, btn1: Option<&str>) -> i32 {
     }
 
     win.show();
+    // 标题栏与背景融为一体（DWM）
+    theme::apply_dwm_titlebar(&win);
     while win.shown() {
         if !app::wait() {
             break;

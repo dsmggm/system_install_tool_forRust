@@ -1,13 +1,9 @@
 //! 统一视觉主题：配色、字体与常用控件样式。
 //!
-//! 支持浅/暗两种主题模式，按 2 阶段手动切换：
-//! - 启动时：根据系统深浅色自动选择初始主题
-//! - 运行时：点击按钮在「明亮」⇔「暗黑」循环切换
+//! 支持浅色/深色主题，自动检测系统主题，字体颜色随主题自动切换。
 //!
 //! 说明：FLTK 没有样式表，所有外观都靠 `box/color/font/size` 逐控件设置，
 //! 因此这里集中成少量构造函数，避免各处散落的魔法颜色。
-//!
-//! 现代化效果：Tech Blue 渐变、玻璃拟态（alpha blending）、标题栏融合。
 
 #![allow(dead_code)]
 #![allow(non_snake_case)]
@@ -16,7 +12,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use fltk::app;
 use fltk::button::Button;
-use fltk::draw;
 use fltk::enums::{Align, Color, Font, FrameType};
 use fltk::frame::Frame;
 use fltk::group::{Flex, Group};
@@ -118,7 +113,15 @@ fn apply_theme() {
 pub mod light {
     use super::Rgb;
     pub const BG: Rgb = (0xF5, 0xF7, 0xFC);
+    /// 渐变停靠点①（顶部，标题栏 DWM 融合用它）：淡科技蓝
+    pub const BG_TOP: Rgb = (0xD6, 0xE4, 0xFC);
+    /// 渐变停靠点②（中部过渡）
+    pub const BG_MID: Rgb = (0xE7, 0xED, 0xF9);
+    /// 渐变停靠点③（底部，中性浅灰，色相从蓝漂移到中性）
+    pub const BG_BOTTOM: Rgb = (0xEF, 0xF0, 0xF4);
     pub const CARD: Rgb = (0xFF, 0xFF, 0xFF);
+    /// 毛玻璃卡片：接近纯白的亮层，与渐变底部形成明显"浮起"层次
+    pub const GLASS_CARD: Rgb = (0xFD, 0xFE, 0xFF);
     pub const INPUT_BG: Rgb = (0xEC, 0xF0, 0xF8);
     pub const BORDER: Rgb = (0xE1, 0xE6, 0xF1);
     pub const TEXT: Rgb = (0x19, 0x22, 0x33);
@@ -140,7 +143,15 @@ pub mod light {
 pub mod dark {
     use super::Rgb;
     pub const BG: Rgb = (0x15, 0x17, 0x1E);
+    /// 渐变停靠点①（顶部）：明显蓝调
+    pub const BG_TOP: Rgb = (0x25, 0x31, 0x4E);
+    /// 渐变停靠点②（中部过渡）
+    pub const BG_MID: Rgb = (0x1A, 0x20, 0x30);
+    /// 渐变停靠点③（底部，近黑中性）
+    pub const BG_BOTTOM: Rgb = (0x12, 0x13, 0x18);
     pub const CARD: Rgb = (0x20, 0x23, 0x2D);
+    /// 毛玻璃卡片：明显亮于渐变底，模拟深色磨砂
+    pub const GLASS_CARD: Rgb = (0x28, 0x2F, 0x43);
     pub const INPUT_BG: Rgb = (0x2B, 0x2F, 0x3A);
     pub const BORDER: Rgb = (0x38, 0x3D, 0x4A);
     pub const TEXT: Rgb = (0xE4, 0xE8, 0xF2);
@@ -158,18 +169,17 @@ pub mod dark {
     pub const SELECTION: Rgb = (0x2E, 0x46, 0x74);
 }
 
-/// Tech Blue 主色调（#2563EB / #4D8EF7）
-/// 亮色模式下用浅蓝渐变，深色模式下用深蓝渐变。
-pub const TECH_BLUE_LIGHT: Rgb = (0x25, 0x63, 0xEB);   // #2563EB
-pub const TECH_BLUE_DARK: Rgb = (0x4D, 0x8E, 0xF7);     // #4D8EF7
-
 /// 当前主题的配色（返回当前主题的值）
 mod current {
     use super::Rgb;
     use super::is_dark;
 
     pub fn bg() -> Rgb { if is_dark() { super::dark::BG } else { super::light::BG } }
+    pub fn bg_top() -> Rgb { if is_dark() { super::dark::BG_TOP } else { super::light::BG_TOP } }
+    pub fn bg_mid() -> Rgb { if is_dark() { super::dark::BG_MID } else { super::light::BG_MID } }
+    pub fn bg_bottom() -> Rgb { if is_dark() { super::dark::BG_BOTTOM } else { super::light::BG_BOTTOM } }
     pub fn card() -> Rgb { if is_dark() { super::dark::CARD } else { super::light::CARD } }
+    pub fn glass_card() -> Rgb { if is_dark() { super::dark::GLASS_CARD } else { super::light::GLASS_CARD } }
     pub fn input_bg() -> Rgb { if is_dark() { super::dark::INPUT_BG } else { super::light::INPUT_BG } }
     pub fn border() -> Rgb { if is_dark() { super::dark::BORDER } else { super::light::BORDER } }
     pub fn text() -> Rgb { if is_dark() { super::dark::TEXT } else { super::light::TEXT } }
@@ -189,7 +199,11 @@ mod current {
 
 // 导出当前主题的配色函数
 pub fn BG() -> Rgb { current::bg() }
+pub fn BG_TOP() -> Rgb { current::bg_top() }
+pub fn BG_MID() -> Rgb { current::bg_mid() }
+pub fn BG_BOTTOM() -> Rgb { current::bg_bottom() }
 pub fn CARD() -> Rgb { current::card() }
+pub fn GLASS_CARD() -> Rgb { current::glass_card() }
 pub fn INPUT_BG() -> Rgb { current::input_bg() }
 pub fn BORDER() -> Rgb { current::border() }
 pub fn TEXT() -> Rgb { current::text() }
@@ -213,9 +227,13 @@ pub fn SELECTION() -> Rgb { current::selection() }
 /// 【为什么要这张表】FLTK 没有样式表，控件颜色在创建时就被写死成当时的
 /// 主题值。切换主题时无法逐个重建控件，只能靠"旧值 → 新值"映射：
 /// 遍历控件树，把命中旧主题色的颜色替换成新主题下同一角色的颜色。
-const ROLE_PAIRS: [(Rgb, Rgb); 17] = [
+const ROLE_PAIRS: [(Rgb, Rgb); 21] = [
     (light::BG, dark::BG),
+    (light::BG_TOP, dark::BG_TOP),
+    (light::BG_MID, dark::BG_MID),
+    (light::BG_BOTTOM, dark::BG_BOTTOM),
     (light::CARD, dark::CARD),
+    (light::GLASS_CARD, dark::GLASS_CARD),
     (light::INPUT_BG, dark::INPUT_BG),
     (light::BORDER, dark::BORDER),
     (light::TEXT, dark::TEXT),
@@ -336,93 +354,29 @@ pub fn rgb(color: impl IntoRgb) -> Color {
     Color::from_rgba_tuple((r, g, b, 255))
 }
 
-/// 绘制窗口背景渐变（含子控件绘制，确保子控件仍能正常渲染）。
-///
-/// 【原理】FLTK 的 `draw` 回调只在控件**自身**绘制阶段运行：回调内画完
-/// 后必须手动调用 `draw_children()`，否则子控件不会被渲染。窗口（DoubleWindow）
-/// 的 y 为 0、画布即客户区，按行 `draw_xyline` 从上到下插值两色即可。
-///
-/// 【注意】此函数只负责画"背景渐变"，不能用于**有自绘底色**的普通控件
-/// （如卡片 Flex）——那类控件应使用 `style_glass`。
-pub fn draw_bg_gradient<W: WidgetBase + GroupExt>(w: &mut W) {
-    let x = w.x();
-    let y = w.y();
-    let width = w.width();
-    let height = w.height();
-    
-    // Tech Blue 渐变：顶部使用浅 Tech Blue (#2563EB)，底部过渡到主题底色
-    // 亮模式下：浅蓝 → 浅灰底（营造现代感）
-    // 暗模式下：深灰 → 深蓝底（#4D8EF7 渐变）
-    let (r1, g1, b1) = if is_dark() { (0x4D, 0x8E, 0xF7) } else { (0x25, 0x63, 0xEB) };  // TECH_BLUE_*
-    let (r2, g2, b2) = current::bg();
-    
-    // 性能优化：按行绘制渐变，在大窗口上可能稍慢，但 FLTK 绘图非常高效
-    for i in 0..=height {
-        let ratio = i as f32 / height as f32;
-        let r = (r1 as f32 * (1.0 - ratio) + r2 as f32 * ratio) as u8;
-        let g = (g1 as f32 * (1.0 - ratio) + g2 as f32 * ratio) as u8;
-        let b = (b1 as f32 * (1.0 - ratio) + b2 as f32 * ratio) as u8;
-        draw::set_draw_rgb_color(r, g, b);
-        draw::draw_xyline(x, y + i, x + width);
-    }
-    
-    // 绘制子控件（必须调用，否则子控件不会被渲染）
-    w.draw_children();
-}
-
-/// 玻璃拟态效果（简单实现：半透明覆盖层）。
-///
-/// 【用法】调用此函数会为窗口添加一个 draw 回调，依次绘制：
-/// 1. Tech Blue 背景渐变
-/// 2. 一层 140/160 alpha 的半透明遮罩，营造磨砂玻璃感
-///
-/// 【兼容性】`WidgetBase + GroupExt`：Window 本身是 Group 子类，需同时
-/// 实现这两个 trait 才能调用 `draw_children()`。
-///
-/// 【示例】
-/// ```ignore
-/// let mut win = DoubleWindow::new(x, y, w, h, "标题");
-/// theme::style_glass(&mut win);
-/// ```
-pub fn style_glass<W: WidgetBase + GroupExt>(w: &mut W) {
-    w.draw(|w| {
-        let x = w.x();
-        let y = w.y();
-        let width = w.width();
-        let height = w.height();
-
-        // 绘制背景渐变
-        draw_bg_gradient(w);
-
-        // 绘制一层半透明白色/黑色遮罩，模拟磨砂玻璃
-        let alpha_color = if is_dark() {
-            Color::from_rgba_tuple((40, 44, 52, 160))
-        } else {
-            Color::from_rgba_tuple((255, 255, 255, 140))
-        };
-
-        draw::set_draw_color(alpha_color);
-        draw::draw_rect_fill(x, y, width, height, alpha_color);
-    });
-}
-
 // ==================== 初始化 ====================
 
 /// 全局字体与基础尺寸（必须在创建任何控件之前调用）。
 pub fn init() {
-    // 中文界面优先用系统自带雅黑；缺失时 fltk 会回落到 Helvetica。
-    app::set_font(Font::by_name("Microsoft YaHei UI"));
+    app::set_font(ui_font());
     app::set_font_size(12);
     LAST_DARK_STORE.store(is_dark(), Ordering::Relaxed);
     apply_theme();
 }
 
+/// 界面统用字体：中文优先用系统自带雅黑（缺失时 fltk 回落 Helvetica）。
+///
+/// 自绘控件（如磁盘行内的「规划分区」按钮）也要用它，才能与相邻控件同字体。
+pub fn ui_font() -> Font {
+    Font::by_name("Microsoft YaHei UI")
+}
+
 // ==================== 样式函数 ====================
 
-/// 把 Flex 变成圆角卡片。
+/// 把 Flex 变成圆角毛玻璃卡片。
 pub fn style_card(f: &mut Flex) {
     f.set_frame(FrameType::RFlatBox);
-    f.set_color(rgb(current::card()));
+    f.set_color(rgb(current::glass_card()));
     f.set_margins(10, 10, 10, 10);
     f.set_spacing(5);
 }
@@ -430,7 +384,7 @@ pub fn style_card(f: &mut Flex) {
 /// 卡片内嵌分组（透明底、保留边距与间距）：外框已合并到大卡片时使用。
 pub fn style_section(f: &mut Flex) {
     f.set_frame(FrameType::NoBox);
-    f.set_color(rgb(current::card()));
+    f.set_color(rgb(current::glass_card()));
     f.set_margins(10, 10, 10, 10);
     f.set_spacing(5);
 }
@@ -513,22 +467,6 @@ pub fn ghost_button(txt: &str) -> Button {
     b
 }
 
-/// 树行内按钮（紧凑、浅底、悬停明显变蓝）。
-/// 适合在 Tree 的 LabelAndWidget 模式下做行内操作按钮。
-pub fn tree_button(txt: &str) -> Button {
-    let mut b = Button::default().with_label(txt);
-    b.set_frame(FrameType::RFlatBox);
-    b.set_down_frame(FrameType::RFlatBox);
-    b.set_color(rgb(current::input_bg()));
-    b.set_selection_color(rgb(current::press_soft()));
-    b.set_label_color(rgb(current::primary()));
-    b.set_label_font(Font::HelveticaBold);
-    b.set_label_size(11);
-    b.set_align(Align::Center | Align::Inside);
-    add_hover_effect(&mut b, current::primary_soft());
-    b
-}
-
 /// 给按钮添加悬停效果（进入/离开时切换颜色）。
 /// 需要在按钮创建后立即调用，`hover_color` 为鼠标进入时的底色。
 /// 支持传入 RGB 元组或函数引用（如 `theme::PRIMARY_SOFT`）。
@@ -544,17 +482,30 @@ pub fn add_hover_effect<B: fltk::prelude::WidgetBase>(btn: &mut B, hover_color: 
             fltk::enums::Event::Enter => {
                 w.set_color(remap_role(Color::from_rgba_tuple((hover_rgb.0, hover_rgb.1, hover_rgb.2, 255)))
                     .unwrap_or_else(|| rgb((hover_rgb.0, hover_rgb.1, hover_rgb.2))));
-                w.redraw();
+                redraw_whole_window(w);
                 true
             }
             fltk::enums::Event::Leave => {
                 w.set_color(remap_role(default_color).unwrap_or(default_color));
-                w.redraw();
+                redraw_whole_window(w);
                 true
             }
             _ => false,
         }
     });
+}
+
+/// 悬停重绘用整窗重绘，不用 `widget.redraw()` 局部重绘。
+///
+/// 【为什么】主窗口挂了自定义渐变背景绘制回调（`apply_window_backdrop`）。
+/// 局部重绘曾经在 FL_DAMAGE_CHILD 路径下丢失标签（"鼠标经过按钮，按钮
+/// 就没了"）；`apply_window_backdrop` 现已强制全量重绘子控件，该问题已从
+/// 根源修复。整窗重绘保留为双保险——成本相同，且保证悬停换色与背景渐变
+/// 永远一致。
+fn redraw_whole_window<B: fltk::prelude::WidgetBase>(w: &B) {
+    if let Some(mut win) = w.window() {
+        win.redraw();
+    }
 }
 
 /// 分段选择容器（浅底圆角条，GPT/MBR 等互斥选项放进里面形成"分段"外观）。
@@ -603,3 +554,129 @@ pub fn style_progress(p: &mut Progress) {
     p.set_color(rgb(current::input_bg()));
     p.set_selection_color(rgb(current::primary()));
 }
+
+// ==================== 渐变背景 + 标题栏融合（毛玻璃观感） ====================
+
+use fltk::draw;
+
+/// 画整窗竖向渐变背景：三停靠点平滑过渡（顶部科技蓝 → 中部过渡 → 底部中性）。
+/// 顶部色与 DWM 标题栏色一致，从而标题栏与内容区融为一体；
+/// 顶部到底部同时做明度与色相漂移（蓝 → 中性），层次感比两色渐变明显。
+pub fn draw_bg_gradient(w: i32, h: i32) {
+    let stops: [(f32, Rgb); 3] = if is_dark() {
+        [
+            (0.0, dark::BG_TOP),
+            (0.5, dark::BG_MID),
+            (1.0, dark::BG_BOTTOM),
+        ]
+    } else {
+        [
+            (0.0, light::BG_TOP),
+            (0.5, light::BG_MID),
+            (1.0, light::BG_BOTTOM),
+        ]
+    };
+    let bands = (h / 2).max(1);
+    for i in 0..bands {
+        let t = i as f32 / (bands.max(2) - 1) as f32;
+        draw::draw_rect_fill(0, i * 2, w, 2, sample_stops(&stops, t));
+    }
+    // 末尾不足一条 band 的余量补齐
+    let rest = h - bands * 2;
+    if rest > 0 {
+        draw::draw_rect_fill(0, bands * 2, w, rest, sample_stops(&stops, 1.0));
+    }
+}
+
+/// 在渐变停靠点之间线性插值取样。
+fn sample_stops(stops: &[(f32, Rgb); 3], t: f32) -> Color {
+    let t = t.clamp(0.0, 1.0);
+    // 找到 t 所在的停靠区间 [stops[i], stops[i+1]]
+    let i = if t > stops[1].0 { 1 } else { 0 };
+    let (t0, c0) = stops[i];
+    let (t1, c1) = stops[i + 1];
+    let f = if t1 > t0 {
+        ((t - t0) / (t1 - t0)).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let mix = |a: u8, b: u8| -> u8 { (a as f32 + (b as f32 - a as f32) * f) as u8 };
+    Color::from_rgba_tuple((
+        mix(c0.0, c1.0),
+        mix(c0.1, c1.1),
+        mix(c0.2, c1.2),
+        255,
+    ))
+}
+
+/// 绘制链路修复标记：启动日志里会打印它，用来确认当前运行的是哪一版构建
+/// （排障时一眼看出是不是旧 exe）。
+pub const UI_FIX_TAG: &str = "ui-redraw-fix-2026-11-11-b";
+
+/// 给顶层窗口挂上"渐变背景 + 子控件"的自绘回调。
+/// 必须在 `win.end()`（子控件挂载完毕）之后、`show()` 之前调用。
+pub fn apply_window_backdrop<W>(win: &mut W)
+where
+    W: WidgetBase + WindowExt + 'static,
+{
+    win.draw(|w| {
+        let (cw, ch) = (w.w(), w.h());
+        draw_bg_gradient(cw, ch);
+        // 【局部重绘修复】本回调在默认绘制（Fl_Window::draw）**之后**执行
+        // （cfltk 的 Widget_Derived 默认 super_draw_first=true），而默认绘制
+        // 结束时已经把所有子控件的 damage 清零。于是接下来这次
+        // draw_children 在「局部重绘」（FL_DAMAGE_CHILD：按钮按下、树行内
+        // 按钮悬停、进度条推进等）时走的是 update_child 分支 —— 没有任何
+        // 控件还带 damage，什么都不画，受损矩形里只剩渐变：
+        //   - 按下任意按钮 → 按钮矩形变成方形色块，整窗重绘后才恢复；
+        //   - 悬停树行内按钮（tree.redraw）→ 整个树区域被渐变覆盖成空。
+        // 修复：把窗口 damage 强制置为 ALL，让 draw_children 走全量分支
+        // （draw_child 会先 clear_damage(FL_DAMAGE_ALL) 再绘制，递归地把
+        // 每个子控件都标成全量重绘），受损矩形内的父级卡片底色、树条目、
+        // 按钮全部补画完整。屏幕拷贝仍按受损矩形裁剪，不会整窗闪烁；
+        // 代价与一次整窗重绘相同（悬停效果本来就在做整窗重绘）。
+        w.set_damage_type(fltk::enums::Damage::All);
+        unsafe {
+            fltk_sys::window::Fl_Double_Window_draw_children(
+                w.as_widget_ptr() as *mut fltk_sys::window::Fl_Double_Window,
+            );
+        }
+    });
+}
+
+/// 【标题栏与背景融为一体】
+/// 通过 DWM 把标题栏/边框颜色设为渐变顶部色（Windows 11 生效；
+/// Windows 10 不支持改标题栏颜色，会静默忽略，同时仍应用深浅色标题栏）。
+/// 在窗口 `show()` 之后调用；主题切换后再次调用即可刷新。
+#[cfg(target_os = "windows")]
+pub fn apply_dwm_titlebar<W: WindowExt>(win: &W) {
+    use windows_sys::Win32::Foundation::HWND;
+    use windows_sys::Win32::Graphics::Dwm::DwmSetWindowAttribute;
+
+    // COLORREF 为 0x00BBGGRR
+    fn colorref(c: Rgb) -> u32 {
+        ((c.2 as u32) << 16) | ((c.1 as u32) << 8) | (c.0 as u32)
+    }
+
+    let hwnd = win.raw_handle() as HWND;
+    if hwnd.is_null() {
+        return;
+    }
+    let caption = colorref(current::bg_top());
+    // DWMWA_COLOR_NONE (0xFFFFFFFE)：完全去掉边框线（Win11 支持）
+    let border: u32 = 0xFFFF_FFFE;
+    let text = colorref(current::text());
+    let dark: i32 = is_dark() as i32;
+
+    unsafe {
+        // DWMWA_USE_IMMERSIVE_DARK_MODE = 20（Win10 19041+ / Win11）
+        DwmSetWindowAttribute(hwnd, 20, &dark as *const _ as *const core::ffi::c_void, 4);
+        // DWMWA_BORDER_COLOR = 34, DWMWA_CAPTION_COLOR = 35, DWMWA_TEXT_COLOR = 36（Win11）
+        DwmSetWindowAttribute(hwnd, 34, &border as *const _ as *const core::ffi::c_void, 4);
+        DwmSetWindowAttribute(hwnd, 35, &caption as *const _ as *const core::ffi::c_void, 4);
+        DwmSetWindowAttribute(hwnd, 36, &text as *const _ as *const core::ffi::c_void, 4);
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn apply_dwm_titlebar<W: WindowExt>(_win: &W) {}

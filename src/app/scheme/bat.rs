@@ -65,6 +65,11 @@ pub struct InstallSettings {
     pub disable_defender: bool,
     /// 关闭 Windows 防火墙（写入 unattend.xml 的 `%disable_firwall%`）
     pub disable_firewall: bool,
+    /// 进系统后执行脚本（写入 unattend.xml 的 `%run_after%`）
+    ///
+    /// 脚本路径本身存放在 config.ini 的 `run_after` 键（全局配置，不随方案走），
+    /// 方案里只记录"是否执行"。
+    pub run_after: bool,
     pub admin_username: String,
     pub restart_after_install: bool,
     pub target_disk: String,
@@ -90,6 +95,7 @@ impl Default for InstallSettings {
             deploy_unattend: false,
             disable_defender: false,
             disable_firewall: false,
+            run_after: false,
             admin_username: "admin".to_string(),
             restart_after_install: false,
             target_disk: String::new(),
@@ -181,6 +187,7 @@ pub fn build_plan_metadata(scheme: &SchemeData) -> String {
         ":: disable_firewall={}",
         bool01(inst.disable_firewall)
     ));
+    lines.push(format!(":: run_after={}", bool01(inst.run_after)));
     lines.push(format!(
         ":: admin_username={}",
         safe_value(&inst.admin_username)
@@ -344,6 +351,8 @@ pub fn parse_plan_metadata(bat_text: &str) -> Option<SchemeData> {
         disable_defender: get_str("disable_defender", "0") == "1",
         // 旧方案文件没有此字段，默认 false
         disable_firewall: get_str("disable_firewall", "0") == "1",
+        // 旧方案文件没有此字段，默认 false（不执行）
+        run_after: get_str("run_after", "0") == "1",
         admin_username: get_str("admin_username", "admin"),
         restart_after_install: get_str("restart_after_install", "0") == "1",
         target_disk: get_str("target_disk", ""),
@@ -694,7 +703,7 @@ pub fn build_combined_bat(scheme: &SchemeData) -> String {
     ];
 
     if !scheme.partitions.is_empty() {
-        parts.push("echo [1] 正在执行一键分区...".to_string());
+        parts.push("echo [1] 正在执行规划分区...".to_string());
         parts.push("(".to_string());
         let last = scheme.partitions.len() - 1;
         for (i, partition) in scheme.partitions.iter().enumerate() {
@@ -753,6 +762,7 @@ mod tests {
             copy_tools: true,
             deploy_unattend: true,
             disable_defender: true,
+            run_after: true,
             admin_username: "user1".to_string(),
             restart_after_install: true,
             target_disk: "0".to_string(),
@@ -793,6 +803,8 @@ mod tests {
         assert!(meta.contains(":: part_count=1\r\n"));
         assert!(meta.contains(":: image_type=wim\r\n"));
         assert!(meta.contains(":: admin_username=user1\r\n"));
+        // 进系统后执行（新增字段）
+        assert!(meta.contains(":: run_after=1\r\n"));
     }
 
     /// ← `_safe_value`：移除 `" & | ^` 并 strip
@@ -851,6 +863,8 @@ mod tests {
         assert!(parsed.install.auto_repair_boot);
         // gho_repair_boot 缺省为真（分区还原后修复引导默认勾选）
         assert!(parsed.install.gho_repair_boot);
+        // 旧方案无 run_after 字段 → 默认不执行
+        assert!(!parsed.install.run_after);
     }
 
     /// 无元数据块返回 None
@@ -1023,7 +1037,7 @@ mod tests {
         let bat = build_combined_bat(&sample_scheme());
         assert!(bat.starts_with("@echo off\r\nchcp 65001 >nul\r\n"));
         assert!(bat.contains("title 正在还原系统"));
-        assert!(bat.contains("echo [1] 正在执行一键分区..."));
+        assert!(bat.contains("echo [1] 正在执行规划分区..."));
         assert!(bat.contains(") | diskpart"));
         assert!(bat.contains("echo [2] 开始安装系统..."));
         assert!(bat.contains("echo [完成] 系统安装成功"));
@@ -1038,7 +1052,7 @@ mod tests {
         let mut scheme = sample_scheme();
         scheme.partitions.clear();
         let bat = build_combined_bat(&scheme);
-        assert!(!bat.contains("echo [1] 正在执行一键分区..."));
+        assert!(!bat.contains("echo [1] 正在执行规划分区..."));
         assert!(!bat.contains("echo clean"));
         assert!(bat.contains("echo [1.5] 正在检测分区盘符..."));
         assert!(bat.contains("echo [1] 开始安装系统..."));

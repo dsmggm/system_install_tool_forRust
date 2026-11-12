@@ -88,7 +88,7 @@ impl DataPartSpec {
     }
 }
 
-/// 一键分区实际分配的盘符（对应 Python `assigned_letters` 字典
+/// 规划分区实际分配的盘符（对应 Python `assigned_letters` 字典
 /// `{"esp": "Z", "data": ["C", "D"]}`）
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct AssignedLetters {
@@ -461,7 +461,7 @@ pub fn find_available_drive_letter() -> Option<char> {
     available_letter_from(&get_used_letters())
 }
 
-/// 一键分区脚本构造（纯函数，dry-run 可用；← `one_click_partition` 的命令生成部分）
+/// 规划分区脚本构造（纯函数，dry-run 可用；← `one_click_partition` 的命令生成部分）
 ///
 /// 流程对照 Python：
 /// 1. `select disk` → `clean` → `convert {style}`
@@ -577,7 +577,7 @@ pub fn one_click_script(
     (commands, assigned)
 }
 
-/// 一键分区（← `one_click_partition`）：清除磁盘并按指定方案重新分区
+/// 规划分区（← `one_click_partition`）：清除磁盘并按指定方案重新分区
 ///
 /// `assigned_letters` 会写入实际分配结果（对应 Python 出参字典）。
 pub fn one_click_partition(
@@ -602,7 +602,7 @@ pub fn one_click_partition(
         ),
     };
     log::warn!(
-        "一键分区: 磁盘 {disk_number}, 分区表={style}, ESP={}, 数据分区方案={parts_desc}, 动态盘符={fixed_letters}",
+        "规划分区: 磁盘 {disk_number}, 分区表={style}, ESP={}, 数据分区方案={parts_desc}, 动态盘符={fixed_letters}",
         if esp_enabled {
             format!("启用({esp_size_mb}MB)")
         } else {
@@ -625,10 +625,10 @@ pub fn one_click_partition(
     let ok = run_diskpart(&commands, DEFAULT_TIMEOUT);
     if ok.0 {
         log::info!(
-            "一键分区完成: 磁盘 {disk_number}, 分配盘符={assigned_letters:?}"
+            "规划分区完成: 磁盘 {disk_number}, 分配盘符={assigned_letters:?}"
         );
     } else {
-        log::error!("一键分区失败: 磁盘 {disk_number}");
+        log::error!("规划分区失败: 磁盘 {disk_number}");
     }
     ok
 }

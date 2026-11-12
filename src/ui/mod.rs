@@ -10,7 +10,9 @@
 //! 执行 `f` 后再放回，从而允许回调内嵌套模态对话框（嵌套事件循环）。
 
 mod app;
+mod disk_row;
 mod ghost;
+mod layout;
 mod log_panel;
 mod msg;
 mod one_click;

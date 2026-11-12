@@ -11,12 +11,13 @@ chrono = "0.4"
 # 默认特性（不带 fltk-bundled）会从源码用 CMake 编译 FLTK，产物体积大一倍
 # 且依赖 CMake/MSBuild 环境。
 fltk = { version = "1.4", features = ["fltk-bundled"] }
-# 直接引用 fltk-sys 以使用 `Fl::delete_widget`（延迟删除）——
-# fltk-rs 公开的 `WidgetBase::delete` 是立即 C++ delete，在回调栈内使用是 UAF
+# 直接引用 fltk-sys 以调用 fltk-rs 未封装的原生绘制入口
+# （窗口自绘回调里补画子控件 `Fl_Double_Window_draw_children`）
 fltk-sys = "1.5"
 windows-sys = { version = "0.59", features = [
     "Win32_Foundation",
     "Win32_Globalization",
+    "Win32_Graphics_Dwm",
     "Win32_Security",
     "Win32_Storage_FileSystem",
     "Win32_System_Console",

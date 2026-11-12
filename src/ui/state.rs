@@ -27,7 +27,7 @@ pub enum Message {
     PostPartitionRefresh(Vec<(u32, DiskInfo)>),
 }
 
-/// 一键分区暂存结果（← OneClickPartitionDialog.result 的字典）
+/// 规划分区暂存结果（← OneClickPartitionDialog.result 的字典）
 #[derive(Debug, Clone)]
 pub struct PendingPartition {
     pub disk_physical: i64,

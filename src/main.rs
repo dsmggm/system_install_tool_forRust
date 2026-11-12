@@ -138,6 +138,7 @@ fn main() {
     }
 
     log::info!("硕科斯系统安装工具启动 V{}", VERSION);
+    log::info!("UI 绘制标记: {}", crate::ui::theme::UI_FIX_TAG);
 
     // 2. --dump-disks 调试开关（对照 `python GetDiskInfo.py` 的 JSON 输出，里程碑 2 验收用）。
     if env::args().any(|a| a == "--dump-disks") {
@@ -168,6 +169,12 @@ fn main() {
         _ => ThemeMode::Auto,
     };
     theme::set_mode(theme_mode);
+    // auto 时把实际跟随到的系统主题也打出来，便于排查"为什么是深/浅色"
+    log::info!(
+        "主题模式: {}（生效: {}）",
+        theme::mode_name(theme_mode),
+        if theme::is_dark() { "深色" } else { "明亮" }
+    );
 
     // 4. 启动 GUI（阻塞至窗口关闭）
     if let Err(e) = ui::run(app_config) {

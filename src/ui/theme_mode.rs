@@ -1,10 +1,19 @@
 //! 主题模式：浅色 / 深色 / 自动（跟随系统）
 //!
 //! 通过 Windows 注册表判断系统主题：
-//! - HKCU\Software\Microsoft\Windows\CurrentVersion\ContentSettings\AppsUseLightTheme
-//!   0 = 深色主题, 1 = 浅色主题 (默认)
+//! - HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize\AppsUseLightTheme
+//!   0 = 深色主题, 1 = 浅色主题 (读不到时按浅色兜底)
 
 use std::sync::atomic::{AtomicU8, Ordering};
+
+/// 系统主题所在注册表子键（相对 HKEY_CURRENT_USER）。
+///
+/// 注意：`AppsUseLightTheme` 属于 `Themes\Personalize`，不是
+/// `ContentSettings`（后者没有这个值，读它会永远失败而回落成浅色）。
+pub const THEME_SUBKEY: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize";
+
+/// 主题值名
+pub const THEME_VALUE: &str = "AppsUseLightTheme";
 
 /// 全局主题模式状态：0=Auto, 1=Light, 2=Dark
 static THEME_MODE: AtomicU8 = AtomicU8::new(0);
@@ -54,11 +63,11 @@ impl ThemeMode {
 
     /// 检测当前系统主题
     pub fn detect_system() -> Self {
-        // 访问注册表 HKCU\Software\Microsoft\Windows\CurrentVersion\ContentSettings\AppsUseLightTheme
+        // 访问注册表 HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize\AppsUseLightTheme
         match get_registry_value(
             windows_sys::Win32::System::Registry::HKEY_CURRENT_USER,
-            "Software\\Microsoft\\Windows\\CurrentVersion\\ContentSettings",
-            "AppsUseLightTheme",
+            THEME_SUBKEY,
+            THEME_VALUE,
         ) {
             Ok(0) => ThemeMode::Dark,
             _ => ThemeMode::Light, // 默认浅色，或读取值非0
@@ -147,4 +156,22 @@ fn get_registry_value(hkey: windows_sys::Win32::System::Registry::HKEY, subkey: 
     }
 
     Ok(value as u64)
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 防回归：`AppsUseLightTheme` 只存在于 `Themes\Personalize`。
+    ///
+    /// 历史 bug：曾读 `CurrentVersion\ContentSettings`，该键/值在本机不存在，
+    /// 读取必然失败 → 一直回落成浅色，表现为"跟随系统永远是明亮"。
+    #[test]
+    fn subkey_is_themes_personalize() {
+        assert_eq!(
+            THEME_SUBKEY,
+            "Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize"
+        );
+        assert!(!THEME_SUBKEY.contains("ContentSettings"));
+        assert_eq!(THEME_VALUE, "AppsUseLightTheme");
+    }
 }

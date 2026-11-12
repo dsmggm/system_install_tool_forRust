@@ -47,6 +47,41 @@ pub fn replace_language_placeholders(
         .replace("%UserLocale%", user_locale)
 }
 
+/// 构造「进系统后执行」的 CMD 命令（`unattend-01.cmd` 中的一行）
+///
+/// - `start "" /wait "<脚本>"`：`start` 的空标题参数不可省（否则带引号的
+///   路径会被当成窗口标题）；`/wait` 保证脚本跑完再继续，日志顺序不串。
+/// - `if exist` 守卫：脚本可能没被复制到桌面（用户没勾「复制调试工具」），
+///   缺失时静默跳过，避免首次登录的 PowerShell 脚本块抛错中断后续步骤。
+pub fn build_run_after_command(script_path: &str) -> String {
+    let path = script_path.trim();
+    let path = if path.is_empty() {
+        crate::config::settings::DEFAULT_RUN_AFTER
+    } else {
+        path
+    };
+    format!("if exist \"{path}\" start \"\" /wait \"{path}\"")
+}
+
+/// 替换 `%run_after%` 占位符（模板中位于 `C:\Windows\Setup\Scripts\unattend-01.cmd`）
+///
+/// 该 .cmd 由 `FirstLogon.ps1` 在首次登录时调用，此时调试工具已被移动到
+/// 桌面，`%USERPROFILE%` 即当前用户目录，故默认路径可直接使用。
+///
+/// - 勾选 → 写入执行脚本的命令；
+/// - 未勾选 → 清空（等价于模板里没有这一行）。
+pub fn replace_run_after_placeholder(
+    xml_content: &str,
+    run_after: bool,
+    script_path: &str,
+) -> String {
+    if run_after {
+        xml_content.replace("%run_after%", &build_run_after_command(script_path))
+    } else {
+        xml_content.replace("%run_after%", "")
+    }
+}
+
 /// 获取默认模板内容（← `get_default_template_content`）
 ///
 /// 优先顺序：1. exe 目录 `unattend.xml`；2. 内置常量。
@@ -90,8 +125,8 @@ fn try_makedirs(path: &Path) -> bool {
 
 /// 部署 unattend.xml 到目标系统（← `deploy_unattend_xml`）
 ///
-/// 流程：规范化盘符 → 建 `X:\Windows\panther` → 内存渲染（用户名/语言/
-/// Defender）→ 写入 → 同步到 `System32\sysprep\panther`（失败仅告警）。
+/// 流程：规范化盘符 → 建 `X:\Windows\panther` → 内存渲染（用户名/防火墙/
+/// 进系统后执行脚本）→ 写入 → 同步到 `System32\sysprep\panther`（失败仅告警）。
 ///
 /// 返回 `(成功标志, 输出文本)`。
 #[allow(clippy::too_many_arguments)]
@@ -102,6 +137,8 @@ pub fn deploy_unattend_xml(
     _image_index: i64,
     progress_callback: Option<ProgressFn<'_>>,
     disable_firewall: bool,
+    run_after: bool,
+    run_after_script: &str,
 ) -> (bool, String) {
     log::info!("开始部署 unattend.xml 到 {windows_partition}");
 
@@ -128,10 +165,13 @@ pub fn deploy_unattend_xml(
     let template_content = get_default_template_content();
     let xml_content = replace_username_placeholder(&template_content, username);
     let xml_content = replace_firewall_placeholder(&xml_content, disable_firewall);
+    let xml_content = replace_run_after_placeholder(&xml_content, run_after, run_after_script);
     log::debug!(
         "内存中创建 unattend.xml 完成，用户名: {username}, \
-         关闭防火墙: {}",
-        if disable_firewall { "是" } else { "否" }
+         关闭防火墙: {}, 进系统后执行: {} ({})",
+        if disable_firewall { "是" } else { "否" },
+        if run_after { "是" } else { "否" },
+        run_after_script
     );
 
     if let Some(cb) = progress_callback {
@@ -193,6 +233,8 @@ pub fn optimize_system(
     progress_callback: Option<ProgressFn<'_>>,
     tools_source_path: &str,
     disable_firewall: bool,
+    run_after: bool,
+    run_after_script: &str,
 ) -> (bool, String) {
     let mut all_output: Vec<String> = Vec::new();
     let mut has_error = false;
@@ -215,6 +257,8 @@ pub fn optimize_system(
             image_index,
             progress_callback,
             disable_firewall,
+            run_after,
+            run_after_script,
         );
         all_output.push(format!("[应答文件] {output}"));
         if !ok {
@@ -294,5 +338,57 @@ mod tests {
         let joined = parts.join("\n");
         assert!(joined.starts_with("[应答文件] "));
         assert!(joined.contains("\n[调试工具] "));
+    }
+
+    /// ← `%run_after%`：内置模板存在该占位符，勾选后写入命令、未勾选则清空
+    #[test]
+    fn run_after_placeholder() {
+        // 模板中 `%run_after%` 恰好出现 1 次（unattend-01.cmd 末尾）
+        assert_eq!(UNATTEND_TEMPLATE.matches("%run_after%").count(), 1);
+
+        let on = replace_run_after_placeholder(
+            UNATTEND_TEMPLATE,
+            true,
+            r"%USERPROFILE%\Desktop\TestTools\run_after.bat",
+        );
+        assert!(!on.contains("%run_after%"));
+        assert!(on.contains(
+            "if exist \"%USERPROFILE%\\Desktop\\TestTools\\run_after.bat\" \
+             start \"\" /wait \"%USERPROFILE%\\Desktop\\TestTools\\run_after.bat\""
+        ));
+
+        let off = replace_run_after_placeholder(UNATTEND_TEMPLATE, false, "ignored.bat");
+        assert!(!off.contains("%run_after%"));
+        assert!(!off.contains("ignored.bat"));
+        // 只删掉行内容：其余模板文本保持原长度关系
+        assert!(off.len() < UNATTEND_TEMPLATE.len());
+    }
+
+    /// 空脚本路径回退默认值；路径首尾空白被裁掉
+    #[test]
+    fn run_after_command_shape() {
+        assert_eq!(
+            build_run_after_command("   "),
+            format!(
+                "if exist \"{}\" start \"\" /wait \"{}\"",
+                crate::config::settings::DEFAULT_RUN_AFTER,
+                crate::config::settings::DEFAULT_RUN_AFTER
+            )
+        );
+        assert_eq!(
+            build_run_after_command(r"  D:\a b\x.bat  "),
+            "if exist \"D:\\a b\\x.bat\" start \"\" /wait \"D:\\a b\\x.bat\""
+        );
+    }
+
+    /// 防火墙与 run_after 两个占位符互不影响（同时替换顺序无关）
+    #[test]
+    fn placeholders_are_independent() {
+        let xml = replace_firewall_placeholder(UNATTEND_TEMPLATE, true);
+        let xml = replace_run_after_placeholder(&xml, true, r"C:\x.bat");
+        assert!(!xml.contains("%disable_firwall%"));
+        assert!(!xml.contains("%run_after%"));
+        assert!(xml.contains("netsh advfirewall set allprofiles state off"));
+        assert!(xml.contains("if exist \"C:\\x.bat\" start \"\" /wait \"C:\\x.bat\""));
     }
 }

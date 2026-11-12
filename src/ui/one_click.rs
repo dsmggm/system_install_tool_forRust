@@ -1,4 +1,4 @@
-//! 一键分区对话框（← `gui.py::OneClickPartitionDialog`，文档 §7.3）
+//! 规划分区对话框（← `gui.py::OneClickPartitionDialog`，文档 §7.3）
 //!
 //! 分区表 Radio（GPT/MBR）、EFI Check + 大小 Entry + 单位 Combo（MB/GB）、
 //! 分区数量 Spinner（1-8），动态分区行（大小 + 单位 + 文件系统 + 提示），
@@ -176,25 +176,42 @@ pub fn show(parent: &mut DoubleWindow, data: DialogData) -> Option<PartitionDial
     // 到的就是"点了没弹框"。创建顶层窗口前必须清掉 current group。
     Group::set_current(None::<&Group>);
     let (dx, dy, dw, dh) = super::dialog_geometry(parent, 560, 612, 520, 548);
-    let mut win = DoubleWindow::new(dx, dy, dw, dh, "一键分区");
+    let mut win = DoubleWindow::new(dx, dy, dw, dh, "规划分区");
     win.size_range(dw.min(520), dh.min(548), 0, 0);
-    win.set_color(theme::rgb(theme::BG));
+    win.set_color(theme::rgb(theme::BG_TOP));
     win.set_icon(Some(app_icon()));
-    win.draw(|w| theme::draw_bg_gradient(w));
     win.begin();
+
+    // 【低分辨率适配】800×600 屏幕上本对话框最高只能到 ~552px（屏幕高 -48），
+    // 按原尺寸「8 个数据分区」需要 600px，列表底部会被裁掉。这里按实际可用
+    // 高度切一档紧凑度量：间距 10→6、卡片内边距 10→8、数据行 26→24、
+    // 页头/页脚各收 8/4px —— 8 行内容 512px，552px 里放得下。
+    let tight = dh < 600;
+    let pad = if tight { 8 } else { 16 }; // 根容器外边距
+    let gap = if tight { 6 } else { 10 }; // 根容器/页头行间距
+    let head_h = if tight { 18 } else { 20 }; // 卡片标题
+    let card_m = if tight { 8 } else { 10 }; // 卡片内边距
+    let card_sp = if tight { 6 } else { 8 }; // 卡片内行间距
+    let header_h = if tight { 34 } else { 42 };
+    let boot_h = if tight { 102 } else { 118 };
+    let boot_row_h = if tight { 28 } else { 30 };
+    let esp_row_h = if tight { 24 } else { 26 };
+    let row_h = if tight { 24 } else { 26 }; // 数据分区行高
+    let remain_h = if tight { 20 } else { 22 };
+    let foot_h = if tight { 32 } else { 36 };
 
     // 顶层 Flex 必须铺满窗口客户区，否则整棵控件树都是 0x0（什么都不显示）。
     // `size_of_parent()` 立即按窗口尺寸设置一次；`win.resizable(&root)`（见下方）
     // 让窗口缩放时同步调整——与主窗口 `App` 的做法保持一致。
     let mut root = Flex::default().column().size_of_parent();
-    root.set_margin(16);
-    root.set_spacing(10);
+    root.set_margin(pad);
+    root.set_spacing(gap);
     root.set_color(theme::rgb(theme::BG));
 
     // ---- 页头：磁盘信息条（标题 + 型号/容量）----
     let mut header = Flex::default().row();
     header.set_color(theme::rgb(theme::BG));
-    header.set_spacing(10);
+    header.set_spacing(gap);
     header.set_margin(0);
     let mut header_icon = Frame::default().with_label("HD");
     header_icon.set_frame(FrameType::RFlatBox);
@@ -209,7 +226,7 @@ pub fn show(parent: &mut DoubleWindow, data: DialogData) -> Option<PartitionDial
     info.set_spacing(0);
     info.set_margin(0);
     let disk_title = theme::title(&format!("磁盘 {} 分区", data.disk_idx));
-    info.fixed(&disk_title, 18);
+    info.fixed(&disk_title, head_h);
     let mut disk_sub = Frame::default().with_label(&format!(
         "{}  ·  总容量 {} ({}MB)",
         data.model, data.size_text, total_mb
@@ -219,14 +236,15 @@ pub fn show(parent: &mut DoubleWindow, data: DialogData) -> Option<PartitionDial
     disk_sub.set_label_size(11);
     info.end();
     header.end();
-    root.fixed(&header, 42);
+    root.fixed(&header, header_h);
 
     // ---- 卡片①：引导设置（分区表格式 + ESP）----
     let mut boot_card = Flex::default().column();
     theme::style_card(&mut boot_card);
-    boot_card.set_spacing(8);
+    boot_card.set_margins(card_m, card_m, card_m, card_m);
+    boot_card.set_spacing(card_sp);
     let boot_head = theme::title("引导设置");
-    boot_card.fixed(&boot_head, 20);
+    boot_card.fixed(&boot_head, head_h);
 
     let mut style_row = Flex::default().row();
     style_row.set_color(theme::rgb(theme::BG()));
@@ -253,7 +271,7 @@ pub fn show(parent: &mut DoubleWindow, data: DialogData) -> Option<PartitionDial
     // 两段之和 + 上下左右各 3px 内边距 = 226px，底框与按钮严丝合缝。
     style_row.fixed(&style_seg, 226);
     style_row.end();
-    boot_card.fixed(&style_row, 30);
+    boot_card.fixed(&style_row, boot_row_h);
 
     let mut esp_row = Flex::default().row();
     esp_row.set_color(theme::rgb(theme::BG()));
@@ -278,17 +296,18 @@ pub fn show(parent: &mut DoubleWindow, data: DialogData) -> Option<PartitionDial
     esp_info.set_label_color(theme::rgb(theme::MUTED()));
     esp_info.set_label_size(11);
     esp_row.end();
-    boot_card.fixed(&esp_row, 26);
+    boot_card.fixed(&esp_row, esp_row_h);
 
     boot_card.end();
-    root.fixed(&boot_card, 118);
+    root.fixed(&boot_card, boot_h);
 
     // ---- 卡片②：数据分区（标题 + 数量 + 分区行列表）----
     let mut data_card = Flex::default().column();
     theme::style_card(&mut data_card);
-    data_card.set_spacing(8);
+    data_card.set_margins(card_m, card_m, card_m, card_m);
+    data_card.set_spacing(card_sp);
     let data_head = theme::title("数据分区");
-    data_card.fixed(&data_head, 20);
+    data_card.fixed(&data_head, head_h);
 
     let mut count_row = Flex::default().row();
     count_row.set_color(theme::rgb(theme::BG()));
@@ -301,14 +320,17 @@ pub fn show(parent: &mut DoubleWindow, data: DialogData) -> Option<PartitionDial
     count_spin.set_value(1.0); // 默认 1 个分区（← Python `part_count_var = tk.IntVar(value=1)`）
     count_row.fixed(&count_spin, 60);
     count_row.end();
-    data_card.fixed(&count_row, 26);
+    data_card.fixed(&count_row, row_h);
 
     // 分区行容器必须用 Fl_Flex：普通 Fl_Group 的 `resizable_` 指向自身，
     // 不会给子控件分配尺寸，`parts_v` 会一直是 0x0（整块区域空白）。
-    // 浅底列表容器 + 白色行 = 清晰的"分区行列表"观感。
+    // 三层递进配色：容器 BG < 行 CARD < 输入框 INPUT_BG。
+    // 【陷阱】容器原先也用 INPUT_BG，与 `style_input` 的输入框底色完全相同，
+    // 加上行 Flex 没设 frame（默认 NoBox 不绘制背景），输入框就像"没有颜色"
+    // 一样融进底色看不见。容器改用比输入框更暗/更亮的 BG，行显式画 CARD 底。
     let mut parts_group = Flex::default().column();
     parts_group.set_frame(FrameType::RFlatBox);
-    parts_group.set_color(theme::rgb(theme::INPUT_BG()));
+    parts_group.set_color(theme::rgb(theme::BG()));
     parts_group.set_margin(4);
     parts_group.set_spacing(0);
     parts_group.begin();
@@ -324,7 +346,7 @@ pub fn show(parent: &mut DoubleWindow, data: DialogData) -> Option<PartitionDial
     remain.set_align(Align::Left | Align::Inside);
     remain.set_label_color(theme::rgb(theme::MUTED));
     remain.set_label_size(12);
-    data_card.fixed(&remain, 22);
+    data_card.fixed(&remain, remain_h);
 
     data_card.end();
     // data_card 同样不固定：root 内唯一弹性子项，随窗口缩放拉伸列表区。
@@ -340,12 +362,14 @@ pub fn show(parent: &mut DoubleWindow, data: DialogData) -> Option<PartitionDial
     let mut ok_btn = theme::primary_button("保存");
     btn_row.fixed(&ok_btn, 110);
     btn_row.end();
-    root.fixed(&btn_row, 36);
+    root.fixed(&btn_row, foot_h);
 
     root.end();
     win.end();
     // 窗口缩放时由 root 铺满客户区（与主窗口 `App` 的做法一致）。
     win.resizable(&root);
+    // 渐变背景 + 标题栏融合（与主窗口一致）
+    theme::apply_window_backdrop(&mut win);
 
     // ============ 共享状态 ============
     let rows_rc: Rc<RefCell<Vec<PartRow>>> = Rc::new(RefCell::new(Vec::new()));
@@ -482,7 +506,10 @@ pub fn show(parent: &mut DoubleWindow, data: DialogData) -> Option<PartitionDial
             rows_mut.clear();
             for i in 0..count {
                 let mut row_flex = Flex::default().row();
-                row_flex.set_color(theme::rgb(theme::CARD));
+                // Flex 默认 NoBox：只 set_color 不会绘制任何底色。必须显式给一个
+                // 填充型 frame，行卡片底色才会出现，输入框才有可对比的衬底。
+                row_flex.set_frame(FrameType::FlatBox);
+                row_flex.set_color(theme::rgb(theme::CARD()));
                 let label = theme::form_label(&format!("分区{}", i + 1));
                 row_flex.fixed(&label, 60);
 
@@ -520,9 +547,9 @@ pub fn show(parent: &mut DoubleWindow, data: DialogData) -> Option<PartitionDial
                 row_flex.fixed(&hint, 160);
 
                 row_flex.end();
-                // 行高固定为 26px（← Python 原版每行约 26px，最多 8 行），
+                // 行高固定（正常档 26px，低分辨率紧凑档 24px，最多 8 行），
                 // 否则 Fl_Flex 会把剩余高度平均分给每一行，输入框会被拉得过高。
-                container.fixed(&row_flex, 26);
+                container.fixed(&row_flex, row_h);
                 rows_mut.push(PartRow {
                     size_in,
                     unit_choice,
@@ -770,6 +797,8 @@ pub fn show(parent: &mut DoubleWindow, data: DialogData) -> Option<PartitionDial
     (rebuild_rc.borrow_mut())(1);
 
     win.show();
+    // 标题栏与背景融为一体（DWM）
+    theme::apply_dwm_titlebar(&win);
     // 显示后重新计算一次布局：此时窗口客户区尺寸才最终确定，
     // 需要把 root → parts_group → parts_v → 各行的尺寸一路传下去。
     root.layout();

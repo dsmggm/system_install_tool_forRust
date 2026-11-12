@@ -30,9 +30,8 @@ pub fn show(parent: &mut DoubleWindow, countdown_sec: i64) {
     let (dx, dy, dw, dh) = super::dialog_geometry(parent, 380, 200, 340, 180);
     let mut win = DoubleWindow::new(dx, dy, dw, dh, "系统安装完成");
     win.size_range(dw.min(340), dh.min(180), 0, 0);
-    win.set_color(theme::rgb(theme::BG()));
+    win.set_color(theme::rgb(theme::BG_TOP()));
     win.set_icon(Some(app_icon()));
-    win.draw(|w| theme::draw_bg_gradient(w));
     win.begin();
 
     let mut root = Flex::default().column().size_of_parent();
@@ -43,7 +42,7 @@ pub fn show(parent: &mut DoubleWindow, countdown_sec: i64) {
     // 大卡片：成功标题（粗体）+ 倒计时副文案（次要色），随窗口剩余空间拉伸
     let mut card = Flex::default().column();
     card.set_frame(FrameType::RFlatBox);
-    card.set_color(theme::rgb(theme::CARD()));
+    card.set_color(theme::rgb(theme::GLASS_CARD()));
     card.set_margins(20, 14, 20, 14);
     card.set_spacing(6);
     let mut title_lbl = Frame::default().with_label("系统安装完成");
@@ -72,6 +71,8 @@ pub fn show(parent: &mut DoubleWindow, countdown_sec: i64) {
     // 顶层 Flex 铺满窗口客户区（size_of_parent 已按窗口尺寸设置一次），
     // resizable 让窗口缩放时同步调整——与 one_click.rs / 主窗口一致。
     win.resizable(&root);
+    // 渐变背景 + 标题栏融合（与主窗口一致）
+    theme::apply_window_backdrop(&mut win);
 
     let remaining = Rc::new(Cell::new(total));
     let handle_cell: Rc<Cell<Option<app::TimeoutHandle>>> = Rc::new(Cell::new(None));
@@ -138,6 +139,8 @@ pub fn show(parent: &mut DoubleWindow, countdown_sec: i64) {
     }
 
     win.show();
+    // 标题栏与背景融为一体（DWM）
+    theme::apply_dwm_titlebar(&win);
     while win.shown() {
         if !app::wait() {
             break;
